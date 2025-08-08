@@ -1,10 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DualEditor from '@/components/DualEditor';
 import TagInput from '@/components/TagInput';
+import { createLowlight } from 'lowlight';
+import js from 'highlight.js/lib/languages/javascript';
+import ts from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import java from 'highlight.js/lib/languages/java';
+import 'highlight.js/styles/github-dark.css';
+
+// Configure lowlight for syntax highlighting (same as DualEditor)
+const lowlight = createLowlight();
+lowlight.register({ javascript: js, js });
+lowlight.register({ typescript: ts, ts });
+lowlight.register({ python });
+lowlight.register({ java });
 
 interface Note {
   id: number;
@@ -29,6 +42,60 @@ export default function Home() {
 
   const formatTags = (tags: string[]): string => {
     return tags.join(', ');
+  };
+
+  // Function to apply syntax highlighting to HTML content
+  const applySyntaxHighlighting = (htmlContent: string) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
+    
+    // Find all code blocks and highlight them
+    const codeBlocks = doc.querySelectorAll('pre code');
+    codeBlocks.forEach((codeElement) => {
+      // Get language from the code element or its parent pre element
+      const language = codeElement.getAttribute('data-language') || 
+                     codeElement.parentElement?.getAttribute('data-language') || 
+                     'javascript';
+      const code = codeElement.textContent || '';
+      
+      console.log('data-language attribute:', codeElement.getAttribute('data-language'));
+      console.log('Highlighting code with language:', language);
+      console.log('Code content:', code);
+      
+      try {
+        // Use lowlight's highlight method with the specific language
+        // Ensure we're using the correct language from data-language attribute
+        const highlighted = lowlight.highlight(language, code);
+        
+        // Convert the highlighted result to HTML string using a more robust approach
+        let highlightedHtml = '';
+        
+        const processNode = (node: any): string => {
+          if (typeof node === 'string') {
+            return node;
+          } else if (node.type === 'element') {
+            const className = Array.isArray(node.properties?.className) 
+              ? node.properties.className.join(' ') 
+              : node.properties?.className || '';
+            const content = node.children?.map(processNode).join('') || '';
+            return `<span class="token ${className}">${content}</span>`;
+          } else if (node.type === 'text') {
+            return node.value || '';
+          } else {
+            return node.value || '';
+          }
+        };
+        
+        highlightedHtml = highlighted.children.map(processNode).join('');
+        codeElement.innerHTML = highlightedHtml;
+        codeElement.className = `language-${language}`;
+      } catch (error) {
+        // If language is not supported, just keep the original content
+        console.warn(`Language ${language} not supported for highlighting`);
+      }
+    });
+    
+    return doc.body.innerHTML;
   };
 
   // Fetch notes on component mount
@@ -273,37 +340,46 @@ export default function Home() {
                   )}
                   <div className="prose max-w-none">
                     <div className="text-gray-800 text-lg leading-relaxed">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-4">{children}</h1>,
-                          h2: ({children}) => <h2 className="text-2xl font-bold text-gray-900 mb-3">{children}</h2>,
-                          h3: ({children}) => <h3 className="text-xl font-bold text-gray-900 mb-2">{children}</h3>,
-                          p: ({children}) => <p className="mb-4 text-gray-800">{children}</p>,
-                          ul: ({children}) => <ul className="list-disc list-inside mb-4 text-gray-800">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal list-inside mb-4 text-gray-800">{children}</ol>,
-                          li: ({children}) => <li className="mb-1">{children}</li>,
-                          strong: ({children}) => <strong className="font-bold text-gray-900">{children}</strong>,
-                          em: ({children}) => <em className="italic text-gray-800">{children}</em>,
-                          code: ({children, className }) => {
-                            if (className) {
-                              // Code block
-                              return (
-                                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-                                  <code className={className}>{children as string}</code>
-                                </pre>
-                              );
-                            } else {
-                              // Inline code
-                              return <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">{children}</code>;
-                            }
-                          },
-                          blockquote: ({children}) => <blockquote className="border-l-4 border-emerald-500 pl-4 italic text-gray-700 mb-4">{children}</blockquote>,
-                          a: ({children, href}) => <a href={href} className="text-emerald-600 hover:text-emerald-700 underline">{children}</a>,
-                        }}
-                      >
-                        {selectedNote.content}
-                      </ReactMarkdown>
+                      {selectedNote.content.includes('<') ? (
+                        // Content is HTML from TipTap editor
+                        <div 
+                          dangerouslySetInnerHTML={{ __html: applySyntaxHighlighting(selectedNote.content) }}
+                          className="prose prose-lg max-w-none"
+                        />
+                      ) : (
+                        // Content is markdown
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-4">{children}</h1>,
+                            h2: ({children}) => <h2 className="text-2xl font-bold text-gray-900 mb-3">{children}</h2>,
+                            h3: ({children}) => <h3 className="text-xl font-bold text-gray-900 mb-2">{children}</h3>,
+                            p: ({children}) => <p className="mb-4 text-gray-800">{children}</p>,
+                            ul: ({children}) => <ul className="list-disc list-inside mb-4 text-gray-800">{children}</ul>,
+                            ol: ({children}) => <ol className="list-decimal list-inside mb-4 text-gray-800">{children}</ol>,
+                            li: ({children}) => <li className="mb-1">{children}</li>,
+                            strong: ({children}) => <strong className="font-bold text-gray-900">{children}</strong>,
+                            em: ({children}) => <em className="italic text-gray-800">{children}</em>,
+                            code: ({children, className }) => {
+                              if (className) {
+                                // Code block
+                                return (
+                                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+                                    <code className={className}>{children as string}</code>
+                                  </pre>
+                                );
+                              } else {
+                                // Inline code
+                                return <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">{children}</code>;
+                              }
+                            },
+                            blockquote: ({children}) => <blockquote className="border-l-4 border-emerald-500 pl-4 italic text-gray-700 mb-4">{children}</blockquote>,
+                            a: ({children, href}) => <a href={href} className="text-emerald-600 hover:text-emerald-700 underline">{children}</a>,
+                          }}
+                        >
+                          {selectedNote.content}
+                        </ReactMarkdown>
+                      )}
                     </div>
                   </div>
                 </div>
