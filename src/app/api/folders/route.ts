@@ -17,7 +17,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, parent_id } = body;
+    const { name, parent_id, icon } = body;
     
     if (!name) {
       return NextResponse.json(
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = folderOperations.create.run(name, parent_id || null);
+    const result = folderOperations.create.run(name, parent_id || null, icon || null);
     const folder = folderOperations.getById.get(result.lastInsertRowid);
     
     return NextResponse.json(folder, { status: 201 });

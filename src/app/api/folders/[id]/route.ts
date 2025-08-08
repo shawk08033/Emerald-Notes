@@ -30,7 +30,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { name, parent_id } = body;
+    const { name, parent_id, icon } = body;
     
     if (!name) {
       return NextResponse.json(
@@ -40,7 +40,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    folderOperations.update.run(name, parent_id || null, parseInt(id));
+    folderOperations.update.run(name, parent_id || null, icon || null, parseInt(id));
     const folder = folderOperations.getById.get(parseInt(id));
     
     return NextResponse.json(folder);

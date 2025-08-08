@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DualEditor from '@/components/DualEditor';
 import TagInput from '@/components/TagInput';
-import FolderTree from '@/components/FolderTree';
 import FolderSelector from '@/components/FolderSelector';
 import { createLowlight } from 'lowlight';
 import 'highlight.js/styles/github-dark.css';
@@ -27,7 +27,38 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedFolderId, setSelectedFolderId] = useState<number | 'no-folder' | null>(null);
   const [currentNoteFolderId, setCurrentNoteFolderId] = useState<number | null>(null);
-  const [folders, setFolders] = useState<Array<{id: number, name: string, parent_id: number | null}>>([]);
+  const [folders, setFolders] = useState<Array<{id: number, name: string, parent_id: number | null, icon?: string | null}>>([]);
+  const [folderMeta, setFolderMeta] = useState<Record<number, { count: number; latest?: string }>>({});
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<number, boolean>>({});
+  const [collapsedNoFolder, setCollapsedNoFolder] = useState<boolean>(false);
+  const [selectedFolderSettingsId, setSelectedFolderSettingsId] = useState<number | null>(null);
+  const [editFolderName, setEditFolderName] = useState('');
+  const [editFolderIcon, setEditFolderIcon] = useState('');
+  const [emojiPickerOpenFor, setEmojiPickerOpenFor] = useState<number | null>(null);
+  const EMOJI_OPTIONS = [
+    '📁','📄','📝','📚','💡','🧪','🧰','🔧','🗂️','🗃️','🗒️','📦','🕹️','🧠','🎯','🚀','🧩','📊','💻','⚙️'
+  ];
+
+  const computeFolderMeta = (notesList: Note[]) => {
+    const meta: Record<number, { count: number; latest?: string }> = {};
+    for (const n of notesList) {
+      if (n.folder_id !== null) {
+        const m = meta[n.folder_id] || { count: 0, latest: undefined };
+        m.count += 1;
+        if (!m.latest || new Date(n.updated_at) > new Date(m.latest)) {
+          m.latest = n.updated_at;
+        }
+        meta[n.folder_id] = m;
+      }
+    }
+    return meta;
+  };
+
+  useEffect(() => {
+    setFolderMeta(computeFolderMeta(notes));
+  }, [notes]);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [lowlight, setLowlight] = useState<any>(null);
 
@@ -316,16 +347,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Folder Tree */}
-        <div className="border-b border-gray-200">
-                  <FolderTree
-          selectedFolderId={selectedFolderId}
-          onFolderSelect={(folderId) => {
-            console.log('FolderTree onFolderSelect called with:', folderId);
-            setSelectedFolderId(folderId);
-          }}
-        />
-        </div>
+        {/* Folder tree removed to interleave folders and notes in a single list */}
 
         {/* Notes List */}
         <div className="flex-1 overflow-y-auto">
@@ -335,22 +357,71 @@ export default function Home() {
             </div>
           ) : (
             <div className="p-2">
+              {/* Folders header + add */}
+              <div className="flex items-center justify-between px-2 py-2 border-b border-gray-200 mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Folders</h3>
+                {isCreatingFolder ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          (async () => {
+                            if (!newFolderName.trim()) return;
+                            const res = await fetch('/api/folders', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ name: newFolderName.trim(), parent_id: null, icon: null }),
+                            });
+                            if (res.ok) {
+                              const created = await res.json();
+                              setFolders((prev) => [...prev, created]);
+                              setFolderMeta((prev) => ({ ...prev, [created.id]: { count: 0, latest: undefined } }));
+                              setIsCreatingFolder(false);
+                              setNewFolderName('');
+                            }
+                          })();
+                        } else if (e.key === 'Escape') {
+                          setIsCreatingFolder(false);
+                          setNewFolderName('');
+                        }
+                      }}
+                      placeholder="Folder name..."
+                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-emerald-500 text-gray-900 placeholder-gray-500"
+                      autoFocus
+                    />
+                    <button
+                      className="text-gray-500 hover:text-gray-700 text-sm"
+                      onClick={() => {
+                        setIsCreatingFolder(false);
+                        setNewFolderName('');
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsCreatingFolder(true)}
+                    className="text-emerald-600 hover:text-emerald-700 text-sm"
+                  >
+                    + New
+                  </button>
+                )}
+              </div>
+
               {(() => {
-                // Sort notes so "no-folder" notes appear first
-                const sortedNotes = [...notes].sort((a, b) => {
-                  // If a has no folder and b has a folder, a comes first
-                  if (a.folder_id === null && b.folder_id !== null) return -1;
-                  // If b has no folder and a has a folder, b comes first
-                  if (b.folder_id === null && a.folder_id !== null) return 1;
-                  // Otherwise, maintain original order
-                  return 0;
-                });
+                // Group notes by folder_id (null for no-folder)
+                const grouped = new Map<number | null, typeof notes>();
+                for (const n of notes) {
+                  const key = n.folder_id === null ? null : n.folder_id;
+                  const arr = grouped.get(key) || [];
+                  arr.push(n);
+                  grouped.set(key, arr);
+                }
 
-                console.log('Notes being rendered:', sortedNotes);
-                console.log('First note folder_id:', sortedNotes[0]?.folder_id);
-                console.log('Second note folder_id:', sortedNotes[1]?.folder_id);
-
-                return sortedNotes.map((note) => (
+                const renderNoteItem = (note: typeof notes[number]) => (
                   <div
                     key={note.id}
                     className={`p-3 rounded-md cursor-pointer transition-colors ${
@@ -363,32 +434,138 @@ export default function Home() {
                       setIsEditing(false);
                     }}
                   >
-                    <h3 className="font-medium text-gray-900 truncate text-base">
-                      {note.title}
-                    </h3>
+                    <h3 className="font-medium text-gray-900 truncate text-base">{note.title}</h3>
                     <p className="text-sm text-gray-600 mt-1 truncate">
-                      {note.content 
+                      {note.content
                         ? note.content
-                            .replace(/<[^>]*>/g, '') // Remove all HTML tags
-                            .replace(/^#+\s+/gm, '') // Remove headers
-                            .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
-                            .replace(/\*(.*?)\*/g, '$1') // Remove italic
-                            .replace(/`(.*?)`/g, '$1') // Remove inline code
-                            .replace(/^- (.*$)/gm, '$1') // Remove list markers
-                            .replace(/^(\d+)\. (.*$)/gm, '$2') // Remove numbered list markers
-                            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert links to text
-                            .replace(/\n+/g, ' ') // Replace newlines with spaces
-                            .replace(/\s+/g, ' ') // Normalize whitespace
+                            .replace(/<[^>]*>/g, '')
+                            .replace(/^#+\s+/gm, '')
+                            .replace(/\*\*(.*?)\*\*/g, '$1')
+                            .replace(/\*(.*?)\*/g, '$1')
+                            .replace(/`(.*?)`/g, '$1')
+                            .replace(/^- (.*$)/gm, '$1')
+                            .replace(/^(\d+)\. (.*$)/gm, '$2')
+                            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                            .replace(/\n+/g, ' ')
+                            .replace(/\s+/g, ' ')
                             .trim()
                             .substring(0, 100) + (note.content.length > 100 ? '...' : '')
-                        : 'No content'
-                      }
+                        : 'No content'}
                     </p>
                     <p className="text-xs text-gray-400 mt-2">
                       {new Date(note.updated_at).toLocaleDateString()}
                     </p>
                   </div>
-                ));
+                );
+
+                const blocks: ReactNode[] = [];
+
+                // 1) No-folder notes first (collapsible)
+                const noFolderNotes = grouped.get(null) || [];
+                blocks.push(
+                  <div key="group-no-folder" className="px-2 py-1">
+                    <div className="flex items-center justify-between group">
+                      <div className="flex items-center gap-2">
+                        <button
+                          aria-label="Toggle collapse"
+                          className="text-gray-500 hover:text-gray-700 text-xs"
+                          onClick={() => setCollapsedNoFolder((prev) => !prev)}
+                        >
+                          {collapsedNoFolder ? '▶' : '▼'}
+                        </button>
+                        <span className="text-xs uppercase tracking-wide text-gray-600">No folder</span>
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                          {noFolderNotes.length}
+                        </span>
+                      </div>
+                    </div>
+                    {!collapsedNoFolder && (
+                      <div>
+                        {noFolderNotes.length === 0 ? (
+                          <div className="px-3 py-2 text-xs italic text-gray-400">No notes</div>
+                        ) : (
+                          noFolderNotes.map((n) => <div key={`no-folder-note-${n.id}`}>{renderNoteItem(n)}</div>)
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                // 2) Then each folder and its notes
+                folders.forEach((folder) => {
+                  const folderNotes = grouped.get(folder.id) || [];
+                  // Always render folder header, even if empty
+                  blocks.push(
+                    <div key={`group-${folder.id}`} className="px-2 py-1">
+                      <div className="flex items-center justify-between group">
+                        <div className="flex items-center gap-2">
+                          <button
+                            aria-label="Toggle collapse"
+                            className="text-gray-500 hover:text-gray-700 text-xs"
+                            onClick={() =>
+                              setCollapsedFolders((prev) => ({
+                                ...prev,
+                                [folder.id]: !prev[folder.id],
+                              }))
+                            }
+                          >
+                            {collapsedFolders[folder.id] ? '▶' : '▼'}
+                          </button>
+                          <button
+                            className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-600 hover:text-emerald-700"
+                            onClick={() => {
+                              setSelectedFolderSettingsId(folder.id);
+                              setEditFolderName(folder.name);
+                              setEditFolderIcon(folder.icon || '');
+                              setEmojiPickerOpenFor(null);
+                            }}
+                            title="Click to edit folder settings"
+                          >
+                            <span className="text-base">
+                              {folder.icon ? folder.icon : '📁'}
+                            </span>
+                            <span>{folder.name}</span>
+                            {folderMeta[folder.id]?.count !== undefined && (
+                              <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                {folderMeta[folder.id].count}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-700 text-xs"
+                            onClick={() => {
+                              setSelectedFolderSettingsId(folder.id);
+                              setEditFolderName(folder.name);
+                              setEditFolderIcon(folder.icon || '');
+                              setEmojiPickerOpenFor(null);
+                            }}
+                            title="Folder settings"
+                          >
+                            ⚙
+                          </button>
+                        </div>
+                      </div>
+                      {/* Folder inline settings removed; settings render in main panel */}
+
+                      {/* Notes under folder (respect collapse) */}
+                      {!collapsedFolders[folder.id] && (
+                        <div>
+                          {folderNotes.length === 0 ? (
+                            <div key={`folder-${folder.id}-empty`} className="px-3 py-2 text-xs italic text-gray-400">
+                              No notes
+                            </div>
+                          ) : (
+                            folderNotes.map((n) => <div key={`note-${n.id}`}>{renderNoteItem(n)}</div>)
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+
+                return blocks;
               })()}
             </div>
           )}
@@ -397,7 +574,156 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {selectedNote ? (
+        {selectedFolderSettingsId ? (
+          <>
+            {/* Folder Settings Header */}
+            <div className="p-4 border-b border-gray-200 bg-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    className="text-emerald-600 hover:text-emerald-700"
+                    onClick={() => setSelectedFolderSettingsId(null)}
+                  >
+                    ← Back
+                  </button>
+                  <h2 className="text-xl font-semibold text-gray-800">Folder Settings</h2>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {(() => {
+                    const meta = folderMeta[selectedFolderSettingsId!];
+                    return meta ? `${meta.count} notes` : '';
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Folder Settings Content */}
+            <div className="flex-1 p-6 bg-white">
+              {(() => {
+                const folder = folders.find(f => f.id === selectedFolderSettingsId)!;
+                return (
+                  <div className="max-w-2xl space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                      <input
+                        value={editFolderName}
+                        onChange={(e) => setEditFolderName(e.target.value)}
+                        className="w-full text-base border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-emerald-500 text-gray-900 placeholder-gray-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Icon</label>
+                      <div className="flex items-center gap-2 relative">
+                        <input
+                          value={editFolderIcon}
+                          onChange={(e) => setEditFolderIcon(e.target.value)}
+                          placeholder="e.g. 📁, 💡, 📚"
+                          className="flex-1 text-base border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-emerald-500 text-gray-900 placeholder-gray-500"
+                        />
+                        <button
+                          type="button"
+                          className="text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100"
+                          onClick={() => setEmojiPickerOpenFor((cur) => (cur === folder.id ? null : folder.id))}
+                        >
+                          😀
+                        </button>
+                        {emojiPickerOpenFor === folder.id && (
+                          <div className="absolute top-10 left-0 z-10 bg-white border border-gray-200 rounded shadow p-2 w-60">
+                            <div className="grid grid-cols-8 gap-1 text-base">
+                              {EMOJI_OPTIONS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  className="hover:bg-gray-100 rounded"
+                                  onClick={() => {
+                                    setEditFolderIcon(emoji);
+                                    setEmojiPickerOpenFor(null);
+                                  }}
+                                  title={emoji}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                              <button
+                                type="button"
+                                className="text-xs text-gray-600 hover:text-gray-800"
+                                onClick={() => setEmojiPickerOpenFor(null)}
+                              >
+                                Close
+                              </button>
+                              <button
+                                type="button"
+                                className="text-xs text-red-600 hover:text-red-700"
+                                onClick={() => { setEditFolderIcon(''); setEmojiPickerOpenFor(null); }}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                        onClick={async () => {
+                          if (!folder) return;
+                          try {
+                            const res = await fetch(`/api/folders/${folder.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ name: editFolderName.trim() || folder.name, parent_id: folder.parent_id, icon: editFolderIcon || null }),
+                            });
+                            if (res.ok) {
+                              const updated = await res.json();
+                              setFolders((prev) => prev.map((f) => (f.id === folder.id ? updated : f)));
+                              setSelectedFolderSettingsId(null);
+                              setEmojiPickerOpenFor(null);
+                            }
+                          } catch (e) {
+                            console.error('Failed to update folder', e);
+                          }
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                        onClick={() => { setSelectedFolderSettingsId(null); setEmojiPickerOpenFor(null); }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="ml-auto px-3 py-2 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100"
+                        onClick={async () => {
+                          if (!folder) return;
+                          if (!confirm('Delete this folder? Notes will be moved to No folder.')) return;
+                          try {
+                            const res = await fetch(`/api/folders/${folder.id}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+                              setNotes((prev) => prev.map((n) => (n.folder_id === folder.id ? { ...n, folder_id: null } : n)));
+                              setSelectedFolderSettingsId(null);
+                              setEmojiPickerOpenFor(null);
+                            }
+                          } catch (e) {
+                            console.error('Failed to delete folder', e);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </>
+        ) : selectedNote ? (
           <>
             {/* Note Header */}
             <div className="p-4 border-b border-gray-200 bg-white">

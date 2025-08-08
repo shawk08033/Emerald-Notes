@@ -13,6 +13,7 @@ export function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         parent_id INTEGER,
+        icon TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
@@ -40,6 +41,14 @@ export function initDatabase() {
     } catch (error) {
       // Column already exists, ignore error
       console.log('folder_id column already exists or migration not needed');
+    }
+
+    // Add icon column to existing folders table if it doesn't exist
+    try {
+      db.exec(`ALTER TABLE folders ADD COLUMN icon TEXT`);
+    } catch (error) {
+      // Column already exists, ignore error
+      console.log('icon column already exists or migration not needed');
     }
 
     // Create tags table for better tag management
@@ -145,8 +154,8 @@ export const tagOperations = {
 export const folderOperations = {
   // Create a new folder
   create: db.prepare(`
-    INSERT INTO folders (name, parent_id) 
-    VALUES (?, ?)
+    INSERT INTO folders (name, parent_id, icon) 
+    VALUES (?, ?, ?)
   `),
 
   // Get all folders
@@ -167,7 +176,7 @@ export const folderOperations = {
   // Update folder
   update: db.prepare(`
     UPDATE folders 
-    SET name = ?, parent_id = ?, updated_at = CURRENT_TIMESTAMP 
+    SET name = ?, parent_id = ?, icon = ?, updated_at = CURRENT_TIMESTAMP 
     WHERE id = ?
   `),
 
