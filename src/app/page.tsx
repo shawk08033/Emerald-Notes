@@ -70,12 +70,17 @@ export default function Home() {
       const ts = (await import('highlight.js/lib/languages/typescript')).default;
       const python = (await import('highlight.js/lib/languages/python')).default;
       const java = (await import('highlight.js/lib/languages/java')).default;
+      const xml = (await import('highlight.js/lib/languages/xml')).default;
+      const css = (await import('highlight.js/lib/languages/css')).default;
       
       const lowlightInstance = createLowlight();
       lowlightInstance.register({ javascript: js, js });
       lowlightInstance.register({ typescript: ts, ts });
       lowlightInstance.register({ python });
       lowlightInstance.register({ java });
+      // HTML is handled by highlight.js's 'xml' grammar; register aliases for convenience
+      lowlightInstance.register({ html: xml, xml });
+      lowlightInstance.register({ css });
       
       setLowlight(lowlightInstance);
     };
@@ -91,6 +96,13 @@ export default function Home() {
 
   const formatTags = (tags: string[]): string => {
     return tags.join(', ');
+  };
+
+  // Detect if note content is HTML (from TipTap) vs Markdown
+  const isHtmlContent = (content: string): boolean => {
+    const trimmed = (content || '').trim();
+    // Consider it HTML only if it starts with a tag
+    return /^</.test(trimmed);
   };
 
   // Function to apply syntax highlighting to HTML content
@@ -121,9 +133,15 @@ export default function Home() {
         // Convert the highlighted result to HTML string using a more robust approach
         let highlightedHtml = '';
         
+        const escapeHtml = (s: string) =>
+          s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
         const processNode = (node: any): string => {
           if (typeof node === 'string') {
-            return node;
+            return escapeHtml(node);
           } else if (node.type === 'element') {
             const className = Array.isArray(node.properties?.className) 
               ? node.properties.className.join(' ') 
@@ -131,9 +149,9 @@ export default function Home() {
             const content = node.children?.map(processNode).join('') || '';
             return `<span class="token ${className}">${content}</span>`;
           } else if (node.type === 'text') {
-            return node.value || '';
+            return escapeHtml(node.value || '');
           } else {
-            return node.value || '';
+            return escapeHtml(node.value || '');
           }
         };
         
@@ -805,17 +823,18 @@ export default function Home() {
                   )}
                   <div className="prose max-w-none">
                     <div className="text-gray-800 text-lg leading-relaxed">
-                      {selectedNote.content.includes('<') ? (
+                      {isHtmlContent(selectedNote.content) ? (
                         // Content is HTML from TipTap editor
-                        <div 
+                        <div className="prose prose-lg max-w-none tiptap-view"
                           dangerouslySetInnerHTML={{ __html: applySyntaxHighlighting(selectedNote.content) }}
-                          className="prose prose-lg max-w-none"
                         />
                       ) : (
                         // Content is markdown
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
+                        <div className="prose prose-lg max-w-none tiptap-view">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                            // Use default table structure; styling handled via CSS to match editor
                             h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-4">{children}</h1>,
                             h2: ({children}) => <h2 className="text-2xl font-bold text-gray-900 mb-3">{children}</h2>,
                             h3: ({children}) => <h3 className="text-xl font-bold text-gray-900 mb-2">{children}</h3>,
@@ -840,10 +859,11 @@ export default function Home() {
                             },
                             blockquote: ({children}) => <blockquote className="border-l-4 border-emerald-500 pl-4 italic text-gray-700 mb-4">{children}</blockquote>,
                             a: ({children, href}) => <a href={href} className="text-emerald-600 hover:text-emerald-700 underline">{children}</a>,
-                          }}
-                        >
-                          {selectedNote.content}
-                        </ReactMarkdown>
+                            }}
+                          >
+                            {selectedNote.content}
+                          </ReactMarkdown>
+                        </div>
                       )}
                     </div>
                   </div>

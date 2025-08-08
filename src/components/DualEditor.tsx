@@ -5,13 +5,23 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import { createLowlight } from 'lowlight';
+import xml from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
 import python from 'highlight.js/lib/languages/python';
 import java from 'highlight.js/lib/languages/java';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import php from 'highlight.js/lib/languages/php';
+import go from 'highlight.js/lib/languages/go';
+import ruby from 'highlight.js/lib/languages/ruby';
+import rust from 'highlight.js/lib/languages/rust';
+import sqlLang from 'highlight.js/lib/languages/sql';
+import csharp from 'highlight.js/lib/languages/csharp';
 import 'highlight.js/styles/github-dark.css';
 
 // configure lowlight (register a few common languages automatically)
@@ -20,6 +30,14 @@ lowlight.register({ javascript: js, js });
 lowlight.register({ typescript: ts, ts });
 lowlight.register({ python });
 lowlight.register({ java });
+lowlight.register({ html: xml, xml });
+lowlight.register({ css });
+lowlight.register({ php });
+lowlight.register({ go });
+lowlight.register({ ruby });
+lowlight.register({ rust });
+lowlight.register({ sql: sqlLang });
+lowlight.register({ csharp });
 
 interface DualEditorProps {
   value: string;
@@ -55,17 +73,27 @@ const CodeBlockWithToolbar = CodeBlockLowlight.extend({
         select.appendChild(o);
       });
       select.value = node.attrs.language || 'javascript';
+
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      pre.setAttribute('data-language', select.value || 'javascript');
+      const updatePreLanguage = (lang: string) => {
+        try {
+          pre.setAttribute('data-language', lang || 'javascript');
+        } catch {}
+      };
+      pre.appendChild(code);
+
       select.onchange = () => {
         editor.chain().focus().updateAttributes('codeBlock', { language: select.value }).run();
+        updatePreLanguage(select.value);
       };
 
       const copyBtn = document.createElement('button');
       copyBtn.className = 'codeblock-copy';
       copyBtn.textContent = 'Copy';
 
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      pre.appendChild(code);
+      // pre/code already created above
 
       copyBtn.onclick = () => {
         const text = code.textContent || '';
@@ -86,6 +114,7 @@ const CodeBlockWithToolbar = CodeBlockLowlight.extend({
           if (updated.type.name !== 'codeBlock') return false;
           if (updated.attrs.language && updated.attrs.language !== select.value) {
             select.value = updated.attrs.language;
+            updatePreLanguage(updated.attrs.language);
           }
           return true;
         },
@@ -108,6 +137,7 @@ const CODE_LANGUAGES = [
   'html',
   'css',
   'sql',
+  'php',
 ];
 
 // Toolbar component for the visual editor
@@ -118,7 +148,6 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 
   const handleButtonClick = (action: () => void) => {
     onToolbarAction();
-    editor.chain().focus().run();
     action();
   };
 
@@ -273,6 +302,45 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
         </button>
       </div>
 
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Tables */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() =>
+            handleButtonClick(() =>
+              editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+            )
+          }
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Table"
+        >
+          Table
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().addRowAfter().run())}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Add Row"
+        >
+          +Row
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().addColumnAfter().run())}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Add Column"
+        >
+          +Col
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().deleteTable().run())}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Delete Table"
+        >
+          Del Table
+        </button>
+      </div>
+
       {/* Language selector shown only inside a code block */}
       {/* per-code-block language select lives inside each code block toolbar */}
     </div>
@@ -280,7 +348,6 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 }
 
 export default function DualEditor({ value, onChange, placeholder = "Start writing..." }: DualEditorProps) {
-  const [isMarkdownMode, setIsMarkdownMode] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isToolbarActionRef = useRef(false);
   const [forceUpdate, setForceUpdate] = useState(0);
@@ -359,6 +426,25 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       .token.punctuation { color: #d1d5db !important; }
       .token.class-name { color: #a78bfa !important; }
       .token.variable { color: #f3f4f6 !important; }
+
+      /* Table styles */
+      .tiptap table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+      }
+      .tiptap th, .tiptap td {
+        border: 1px solid #e5e7eb;
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+      }
+      .tiptap thead th {
+        background: #f9fafb;
+        font-weight: 600;
+      }
+      .tiptap tbody tr:nth-child(odd) {
+        background: #fafafa;
+      }
     `;
     document.head.appendChild(style);
     
@@ -391,6 +477,10 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       }),
       CodeBlockWithToolbar.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: value,
     onUpdate: ({ editor }) => {
@@ -403,59 +493,12 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
   });
 
   useEffect(() => {
-    if (editor && !isMarkdownMode && value !== editor.getHTML()) {
+    if (editor && value !== editor.getHTML()) {
       editor.commands.setContent(value);
     }
-  }, [value, editor, isMarkdownMode]);
+  }, [value, editor]);
 
-  const handleMarkdownChange = (markdown: string) => {
-    onChange(markdown);
-  };
-
-  const convertMarkdownToHtml = (markdown: string) => {
-    // Simple conversion for basic Markdown to HTML
-    return markdown
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
-      .replace(/^- (.*$)/gim, '<li>$1</li>')
-      .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/\n/g, '<br>');
-  };
-
-  const convertHtmlToMarkdown = (html: string) => {
-    // Simple conversion from HTML to Markdown
-    return html
-      .replace(/<h1>(.*?)<\/h1>/g, '# $1\n')
-      .replace(/<h2>(.*?)<\/h2>/g, '## $1\n')
-      .replace(/<h3>(.*?)<\/h3>/g, '### $1\n')
-      .replace(/<strong>(.*?)<\/strong>/g, '**$1**')
-      .replace(/<em>(.*?)<\/em>/g, '*$1*')
-      .replace(/<code>(.*?)<\/code>/g, '`$1`')
-      .replace(/<li>(.*?)<\/li>/g, '- $1\n')
-      .replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, '```\n$1\n```')
-      .replace(/<br>/g, '\n')
-      .replace(/<p>(.*?)<\/p>/g, '$1\n');
-  };
-
-  const switchToVisual = () => {
-    if (isMarkdownMode) {
-      const html = convertMarkdownToHtml(value);
-      editor?.commands.setContent(html);
-      setIsMarkdownMode(false);
-    }
-  };
-
-  const switchToMarkdown = () => {
-    if (!isMarkdownMode) {
-      const markdown = convertHtmlToMarkdown(editor?.getHTML() || '');
-      onChange(markdown);
-      setIsMarkdownMode(true);
-    }
-  };
+  // Removed Markdown mode: component now operates in Visual (HTML) mode only
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -473,57 +516,24 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
 
   return (
     <div className="h-full flex flex-col">
-      {/* Editor Mode Toggle */}
-      <div className="flex items-center space-x-2 mb-4 p-2 bg-gray-50 rounded-lg">
-        <button
-          onClick={switchToVisual}
-          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-            !isMarkdownMode
-              ? 'bg-emerald-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Visual
-        </button>
-        <button
-          onClick={switchToMarkdown}
-          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-            isMarkdownMode
-              ? 'bg-emerald-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Markdown
-        </button>
-      </div>
-
       {/* Editor Content */}
       <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
-        {isMarkdownMode ? (
-          <textarea
-            value={value}
-            onChange={(e) => handleMarkdownChange(e.target.value)}
-            className="w-full h-full border-none outline-none bg-transparent resize-none text-gray-900 placeholder-gray-500 text-lg leading-relaxed font-mono p-4"
-            placeholder={placeholder}
+        <div className="h-full flex flex-col">
+          <Toolbar
+            editor={editor}
+            onToolbarAction={() => {
+              isToolbarActionRef.current = true;
+              setForceUpdate(prev => prev + 1); // Force re-render
+            }}
           />
-        ) : (
-          <div className="h-full flex flex-col">
-            <Toolbar
+          <div className="flex-1 p-4 overflow-y-auto min-h-0">
+            <EditorContent
               editor={editor}
-              onToolbarAction={() => {
-                isToolbarActionRef.current = true;
-                setForceUpdate(prev => prev + 1); // Force re-render
-              }}
+              className="tiptap h-full"
+              key={forceUpdate}
             />
-            <div className="flex-1 p-4 overflow-y-auto min-h-0">
-              <EditorContent
-                editor={editor}
-                className="tiptap h-full"
-                key={forceUpdate}
-              />
-            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

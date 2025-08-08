@@ -252,3 +252,46 @@ body {
 .prose .token.punctuation { color: #d1d5db !important; }
 .prose .token.class-name { color: #a78bfa !important; }
 .prose .token.variable { color: #f3f4f6 !important; }
+
+/* Table styles for view mode (match DualEditor) */
+.prose.tiptap-view table,
+.tiptap-view .prose table,
+.tiptap-view table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+.prose.tiptap-view th,
+.prose.tiptap-view td,
+.tiptap-view .prose th,
+.tiptap-view .prose td,
+.tiptap-view th,
+.tiptap-view td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.prose.tiptap-view thead th,
+.tiptap-view .prose thead th,
+.tiptap-view thead th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+.prose.tiptap-view tbody tr:nth-child(odd),
+.tiptap-view .prose tbody tr:nth-child(odd),
+.tiptap-view tbody tr:nth-child(odd) {
+  background: #fafafa;
+}
+
+/* Visual parity for code blocks embedded in view mode */
+.tiptap-view pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
