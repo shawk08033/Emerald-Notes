@@ -1,9 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { noteOperations } from '@/lib/database';
+import { noteOperations, folderOperations } from '@/lib/database';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const notes = noteOperations.getAll.all();
+    const { searchParams } = new URL(request.url);
+    const folderId = searchParams.get('folder_id');
+    const noFolder = searchParams.get('no_folder');
+    
+    console.log('API - folderId:', folderId);
+    console.log('API - noFolder:', noFolder);
+    
+    let notes;
+    if (folderId) {
+      notes = folderOperations.getNotesInFolder.all(parseInt(folderId));
+      console.log('API - Filtering by folder ID:', folderId);
+    } else if (noFolder === 'true') {
+      // Get notes with no folder (folder_id is null)
+      const allNotes = noteOperations.getAll.all();
+      console.log('API - All notes:', allNotes);
+      notes = allNotes.filter((note: any) => note.folder_id === null);
+      console.log('API - Notes with no folder:', notes);
+    } else {
+      notes = noteOperations.getAll.all();
+      console.log('API - Getting all notes');
+    }
+    
+    console.log('API - Returning notes:', notes);
     return NextResponse.json(notes);
   } catch {
     return NextResponse.json(
@@ -28,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = noteOperations.create.run(title, content || '', tags || '');
+    const result = noteOperations.create.run(title, content || '', tags || '', null);
     const note = noteOperations.getById.get(result.lastInsertRowid);
     
     console.log('Created note:', note);

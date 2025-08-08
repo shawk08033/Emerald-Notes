@@ -31,7 +31,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const { title, content, tags } = await request.json();
+    const { title, content, tags, folder_id } = await request.json();
     
     if (!title) {
       return NextResponse.json(
@@ -40,7 +40,7 @@ export async function PUT(
       );
     }
 
-    noteOperations.update.run(title, content || '', tags || '', parseInt(id));
+    noteOperations.update.run(title, content || '', tags || '', folder_id || null, parseInt(id));
     const note = noteOperations.getById.get(parseInt(id));
     
     return NextResponse.json(note);

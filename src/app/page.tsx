@@ -5,24 +5,16 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DualEditor from '@/components/DualEditor';
 import TagInput from '@/components/TagInput';
+import FolderTree from '@/components/FolderTree';
+import FolderSelector from '@/components/FolderSelector';
 import { createLowlight } from 'lowlight';
-import js from 'highlight.js/lib/languages/javascript';
-import ts from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import java from 'highlight.js/lib/languages/java';
 import 'highlight.js/styles/github-dark.css';
-
-// Configure lowlight for syntax highlighting (same as DualEditor)
-const lowlight = createLowlight();
-lowlight.register({ javascript: js, js });
-lowlight.register({ typescript: ts, ts });
-lowlight.register({ python });
-lowlight.register({ java });
 
 interface Note {
   id: number;
   title: string;
   content: string;
+  folder_id: number | null;
   created_at: string;
   updated_at: string;
   tags: string;
@@ -33,6 +25,32 @@ export default function Home() {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | 'no-folder' | null>(null);
+  const [currentNoteFolderId, setCurrentNoteFolderId] = useState<number | null>(null);
+  const [folders, setFolders] = useState<Array<{id: number, name: string, parent_id: number | null}>>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [lowlight, setLowlight] = useState<any>(null);
+
+  // Configure lowlight for syntax highlighting (client-side only)
+  useEffect(() => {
+    const initLowlight = async () => {
+      const { createLowlight } = await import('lowlight');
+      const js = (await import('highlight.js/lib/languages/javascript')).default;
+      const ts = (await import('highlight.js/lib/languages/typescript')).default;
+      const python = (await import('highlight.js/lib/languages/python')).default;
+      const java = (await import('highlight.js/lib/languages/java')).default;
+      
+      const lowlightInstance = createLowlight();
+      lowlightInstance.register({ javascript: js, js });
+      lowlightInstance.register({ typescript: ts, ts });
+      lowlightInstance.register({ python });
+      lowlightInstance.register({ java });
+      
+      setLowlight(lowlightInstance);
+    };
+    
+    initLowlight();
+  }, []);
 
   // Helper functions for tags
   const parseTags = (tagsString: string): string[] => {
@@ -46,6 +64,8 @@ export default function Home() {
 
   // Function to apply syntax highlighting to HTML content
   const applySyntaxHighlighting = (htmlContent: string) => {
+    if (!lowlight) return htmlContent; // Return original content if lowlight not ready
+    
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, 'text/html');
     
@@ -98,20 +118,69 @@ export default function Home() {
     return doc.body.innerHTML;
   };
 
-  // Fetch notes on component mount
+  // Fetch notes when folder selection changes
   useEffect(() => {
-    fetchNotes();
+    // Only fetch when selectedFolderId changes (not on initial load)
+    if (selectedFolderId !== undefined) {
+      console.log('useEffect triggered - selectedFolderId changed to:', selectedFolderId);
+      fetchNotes();
+    }
+  }, [selectedFolderId]);
+
+  // Fetch folders
+  const fetchFolders = async () => {
+    try {
+      const response = await fetch('/api/folders');
+      const data = await response.json();
+      setFolders(data);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchFolders();
+    fetchNotes(); // Initial load
   }, []);
 
+  // Update current note folder when selected note changes
+  useEffect(() => {
+    if (selectedNote) {
+      setCurrentNoteFolderId(selectedNote.folder_id);
+    }
+  }, [selectedNote]);
+
   const fetchNotes = async () => {
+    if (isFetching) return; // Prevent multiple simultaneous calls
+    
     try {
-      const response = await fetch('/api/notes');
+      setIsFetching(true);
+      let url = '/api/notes';
+      if (selectedFolderId !== null) {
+        // If selectedFolderId is a number, filter by that folder
+        // If selectedFolderId is 'no-folder', filter for notes with no folder
+        if (selectedFolderId === 'no-folder') {
+          url = '/api/notes?no_folder=true';
+        } else {
+          url = `/api/notes?folder_id=${selectedFolderId}`;
+        }
+      }
+      console.log('Fetching notes with URL:', url);
+      console.log('Selected folder ID:', selectedFolderId);
+      const response = await fetch(url);
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
       const data = await response.json();
+      console.log('Fetched notes:', data);
+      console.log('Data type:', typeof data);
+      console.log('Data length:', Array.isArray(data) ? data.length : 'not an array');
       setNotes(data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching notes:', error);
       setLoading(false);
+    } finally {
+      setIsFetching(false);
     }
   };
 
@@ -120,7 +189,8 @@ export default function Home() {
       const noteData = {
         title: 'Untitled Note',
         content: '',
-        tags: ''
+        tags: '',
+        folder_id: typeof selectedFolderId === 'number' ? selectedFolderId : null
       };
       
       console.log('Sending note data:', noteData);
@@ -140,6 +210,7 @@ export default function Home() {
         console.log('Created note:', newNote);
         setNotes(prev => [newNote, ...prev]);
         setSelectedNote(newNote);
+        setCurrentNoteFolderId(newNote.folder_id);
         setIsEditing(true);
       } else {
         const errorData = await response.json();
@@ -188,6 +259,40 @@ export default function Home() {
     }
   };
 
+  const handleNoteFolderChange = async (folderId: number | null) => {
+    if (!selectedNote) return;
+    
+    console.log('Changing note folder to:', folderId);
+    
+    try {
+      const updatedNote = { ...selectedNote, folder_id: folderId };
+      console.log('Updated note data:', updatedNote);
+      
+      const response = await fetch(`/api/notes/${selectedNote.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedNote),
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (response.ok) {
+        const updatedNoteData = await response.json();
+        console.log('Updated note response:', updatedNoteData);
+        setNotes(prev => prev.map(n => n.id === selectedNote.id ? updatedNoteData : n));
+        setSelectedNote(updatedNoteData);
+        setCurrentNoteFolderId(updatedNoteData.folder_id);
+      } else {
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+      }
+    } catch (error) {
+      console.error('Error updating note folder:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -211,6 +316,17 @@ export default function Home() {
           </button>
         </div>
 
+        {/* Folder Tree */}
+        <div className="border-b border-gray-200">
+                  <FolderTree
+          selectedFolderId={selectedFolderId}
+          onFolderSelect={(folderId) => {
+            console.log('FolderTree onFolderSelect called with:', folderId);
+            setSelectedFolderId(folderId);
+          }}
+        />
+        </div>
+
         {/* Notes List */}
         <div className="flex-1 overflow-y-auto">
           {notes.length === 0 ? (
@@ -219,45 +335,61 @@ export default function Home() {
             </div>
           ) : (
             <div className="p-2">
-              {notes.map((note) => (
-                <div
-                  key={note.id}
-                  className={`p-3 rounded-md cursor-pointer transition-colors ${
-                    selectedNote?.id === note.id
-                      ? 'bg-emerald-100 border-emerald-300 border'
-                      : 'hover:bg-gray-50'
-                  }`}
-                  onClick={() => {
-                    setSelectedNote(note);
-                    setIsEditing(false);
-                  }}
-                >
-                  <h3 className="font-medium text-gray-900 truncate text-base">
-                    {note.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1 truncate">
-                    {note.content 
-                      ? note.content
-                          .replace(/<[^>]*>/g, '') // Remove all HTML tags
-                          .replace(/^#+\s+/gm, '') // Remove headers
-                          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
-                          .replace(/\*(.*?)\*/g, '$1') // Remove italic
-                          .replace(/`(.*?)`/g, '$1') // Remove inline code
-                          .replace(/^- (.*$)/gm, '$1') // Remove list markers
-                          .replace(/^(\d+)\. (.*$)/gm, '$2') // Remove numbered list markers
-                          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert links to text
-                          .replace(/\n+/g, ' ') // Replace newlines with spaces
-                          .replace(/\s+/g, ' ') // Normalize whitespace
-                          .trim()
-                          .substring(0, 100) + (note.content.length > 100 ? '...' : '')
-                      : 'No content'
-                    }
-                  </p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {new Date(note.updated_at).toLocaleDateString()}
-                  </p>
-                </div>
-              ))}
+              {(() => {
+                // Sort notes so "no-folder" notes appear first
+                const sortedNotes = [...notes].sort((a, b) => {
+                  // If a has no folder and b has a folder, a comes first
+                  if (a.folder_id === null && b.folder_id !== null) return -1;
+                  // If b has no folder and a has a folder, b comes first
+                  if (b.folder_id === null && a.folder_id !== null) return 1;
+                  // Otherwise, maintain original order
+                  return 0;
+                });
+
+                console.log('Notes being rendered:', sortedNotes);
+                console.log('First note folder_id:', sortedNotes[0]?.folder_id);
+                console.log('Second note folder_id:', sortedNotes[1]?.folder_id);
+
+                return sortedNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className={`p-3 rounded-md cursor-pointer transition-colors ${
+                      selectedNote?.id === note.id
+                        ? 'bg-emerald-100 border-emerald-300 border'
+                        : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      setSelectedNote(note);
+                      setIsEditing(false);
+                    }}
+                  >
+                    <h3 className="font-medium text-gray-900 truncate text-base">
+                      {note.title}
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1 truncate">
+                      {note.content 
+                        ? note.content
+                            .replace(/<[^>]*>/g, '') // Remove all HTML tags
+                            .replace(/^#+\s+/gm, '') // Remove headers
+                            .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+                            .replace(/\*(.*?)\*/g, '$1') // Remove italic
+                            .replace(/`(.*?)`/g, '$1') // Remove inline code
+                            .replace(/^- (.*$)/gm, '$1') // Remove list markers
+                            .replace(/^(\d+)\. (.*$)/gm, '$2') // Remove numbered list markers
+                            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert links to text
+                            .replace(/\n+/g, ' ') // Replace newlines with spaces
+                            .replace(/\s+/g, ' ') // Normalize whitespace
+                            .trim()
+                            .substring(0, 100) + (note.content.length > 100 ? '...' : '')
+                        : 'No content'
+                      }
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      {new Date(note.updated_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ));
+              })()}
             </div>
           )}
         </div>
@@ -277,6 +409,13 @@ export default function Home() {
                   >
                     {isEditing ? 'View' : 'Edit'}
                   </button>
+                  <div className="w-48">
+                    <FolderSelector
+                      key={`folder-selector-${selectedNote?.id}-${currentNoteFolderId}`}
+                      selectedFolderId={currentNoteFolderId}
+                      onFolderChange={handleNoteFolderChange}
+                    />
+                  </div>
                 </div>
                 <button
                   onClick={() => deleteNote(selectedNote.id)}

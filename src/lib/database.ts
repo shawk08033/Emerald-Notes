@@ -7,18 +7,40 @@ const db = new Database(dbPath);
 // Initialize database tables
 export function initDatabase() {
   try {
+    // Create folders table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
+      )
+    `);
+
     // Create notes table
     db.exec(`
       CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         content TEXT NOT NULL,
+        folder_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         tags TEXT,
-        is_archived BOOLEAN DEFAULT 0
+        is_archived BOOLEAN DEFAULT 0,
+        FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL
       )
     `);
+
+    // Add folder_id column to existing notes table if it doesn't exist
+    try {
+      db.exec(`ALTER TABLE notes ADD COLUMN folder_id INTEGER REFERENCES folders (id) ON DELETE SET NULL`);
+    } catch (error) {
+      // Column already exists, ignore error
+      console.log('folder_id column already exists or migration not needed');
+    }
 
     // Create tags table for better tag management
     db.exec(`
@@ -53,8 +75,8 @@ initDatabase();
 export const noteOperations = {
   // Create a new note
   create: db.prepare(`
-    INSERT INTO notes (title, content, tags) 
-    VALUES (?, ?, ?)
+    INSERT INTO notes (title, content, tags, folder_id) 
+    VALUES (?, ?, ?, ?)
   `),
 
   // Get all notes
@@ -72,7 +94,7 @@ export const noteOperations = {
   // Update note
   update: db.prepare(`
     UPDATE notes 
-    SET title = ?, content = ?, tags = ?, updated_at = CURRENT_TIMESTAMP 
+    SET title = ?, content = ?, tags = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP 
     WHERE id = ?
   `),
 
@@ -116,6 +138,49 @@ export const tagOperations = {
     SELECT t.* FROM tags t
     JOIN note_tags nt ON t.id = nt.tag_id
     WHERE nt.note_id = ?
+  `)
+};
+
+// Folder operations
+export const folderOperations = {
+  // Create a new folder
+  create: db.prepare(`
+    INSERT INTO folders (name, parent_id) 
+    VALUES (?, ?)
+  `),
+
+  // Get all folders
+  getAll: db.prepare(`
+    SELECT * FROM folders ORDER BY name
+  `),
+
+  // Get folder by ID
+  getById: db.prepare(`
+    SELECT * FROM folders WHERE id = ?
+  `),
+
+  // Get folders by parent ID (for nested folders)
+  getByParent: db.prepare(`
+    SELECT * FROM folders WHERE parent_id = ? ORDER BY name
+  `),
+
+  // Update folder
+  update: db.prepare(`
+    UPDATE folders 
+    SET name = ?, parent_id = ?, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `),
+
+  // Delete folder
+  delete: db.prepare(`
+    DELETE FROM folders WHERE id = ?
+  `),
+
+  // Get notes in a folder
+  getNotesInFolder: db.prepare(`
+    SELECT * FROM notes 
+    WHERE folder_id = ? AND is_archived = 0 
+    ORDER BY updated_at DESC
   `)
 };
 
