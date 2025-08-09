@@ -2,16 +2,30 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import * as TiptapReact from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import { createLowlight } from 'lowlight';
+import { TextSelection, Selection } from '@tiptap/pm/state';
+import xml from 'highlight.js/lib/languages/xml';
+import css from 'highlight.js/lib/languages/css';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
 import python from 'highlight.js/lib/languages/python';
 import java from 'highlight.js/lib/languages/java';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import php from 'highlight.js/lib/languages/php';
+import go from 'highlight.js/lib/languages/go';
+import ruby from 'highlight.js/lib/languages/ruby';
+import rust from 'highlight.js/lib/languages/rust';
+import sqlLang from 'highlight.js/lib/languages/sql';
+import csharp from 'highlight.js/lib/languages/csharp';
 import 'highlight.js/styles/github-dark.css';
 
 // configure lowlight (register a few common languages automatically)
@@ -20,6 +34,14 @@ lowlight.register({ javascript: js, js });
 lowlight.register({ typescript: ts, ts });
 lowlight.register({ python });
 lowlight.register({ java });
+lowlight.register({ html: xml, xml });
+lowlight.register({ css });
+lowlight.register({ php });
+lowlight.register({ go });
+lowlight.register({ ruby });
+lowlight.register({ rust });
+lowlight.register({ sql: sqlLang });
+lowlight.register({ csharp });
 
 interface DualEditorProps {
   value: string;
@@ -55,17 +77,27 @@ const CodeBlockWithToolbar = CodeBlockLowlight.extend({
         select.appendChild(o);
       });
       select.value = node.attrs.language || 'javascript';
+
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      pre.setAttribute('data-language', select.value || 'javascript');
+      const updatePreLanguage = (lang: string) => {
+        try {
+          pre.setAttribute('data-language', lang || 'javascript');
+        } catch {}
+      };
+      pre.appendChild(code);
+
       select.onchange = () => {
         editor.chain().focus().updateAttributes('codeBlock', { language: select.value }).run();
+        updatePreLanguage(select.value);
       };
 
       const copyBtn = document.createElement('button');
       copyBtn.className = 'codeblock-copy';
       copyBtn.textContent = 'Copy';
 
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      pre.appendChild(code);
+      // pre/code already created above
 
       copyBtn.onclick = () => {
         const text = code.textContent || '';
@@ -86,6 +118,7 @@ const CodeBlockWithToolbar = CodeBlockLowlight.extend({
           if (updated.type.name !== 'codeBlock') return false;
           if (updated.attrs.language && updated.attrs.language !== select.value) {
             select.value = updated.attrs.language;
+            updatePreLanguage(updated.attrs.language);
           }
           return true;
         },
@@ -108,6 +141,7 @@ const CODE_LANGUAGES = [
   'html',
   'css',
   'sql',
+  'php',
 ];
 
 // Toolbar component for the visual editor
@@ -118,7 +152,6 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 
   const handleButtonClick = (action: () => void) => {
     onToolbarAction();
-    editor.chain().focus().run();
     action();
   };
 
@@ -178,6 +211,78 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Images */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(async () => {
+            const url = window.prompt('Image URL');
+            if (!url) return;
+            editor.chain().focus().setImage({ src: url }).run();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Image by URL"
+        >
+          Img URL
+        </button>
+        <button
+          onClick={() => handleButtonClick(async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const form = new FormData();
+              form.append('file', file);
+              const res = await fetch('/api/images', { method: 'POST', body: form });
+              if (!res.ok) return;
+              const { id } = await res.json();
+              const url = `/api/images?id=${id}`;
+              if (!url) return;
+              editor.chain().focus().setImage({ src: url, alt: file.name }).run();
+            };
+            input.click();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Upload Image"
+        >
+          Upload
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Link (toggle) */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('link')) {
+              editor.chain().focus().extendMarkRange('link').unsetLink().run();
+              return;
+            }
+            const prev = editor.getAttributes('link')?.href || '';
+            const input = window.prompt('Enter URL', prev || 'https://');
+            if (input === null) return;
+            const value = input.trim();
+            if (!value) return;
+            let href = value;
+            if (!/^(https?:\/\/|mailto:|tel:|\/|#)/i.test(href)) {
+              href = 'https://' + href;
+            }
+            editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+          })}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('link')
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Toggle Link"
+        >
+          Link
+        </button>
+      </div>
 
       {/* Headings */}
       <div className="flex items-center gap-1">
@@ -273,6 +378,24 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
         </button>
       </div>
 
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Tables */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() =>
+            handleButtonClick(() =>
+              editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+            )
+          }
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Table"
+        >
+          Table
+        </button>
+      </div>
+
       {/* Language selector shown only inside a code block */}
       {/* per-code-block language select lives inside each code block toolbar */}
     </div>
@@ -280,10 +403,29 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 }
 
 export default function DualEditor({ value, onChange, placeholder = "Start writing..." }: DualEditorProps) {
-  const [isMarkdownMode, setIsMarkdownMode] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isToolbarActionRef = useRef(false);
   const [forceUpdate, setForceUpdate] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const editorPaneRef = useRef<HTMLDivElement | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ visible: boolean; left: number; top: number }>({ visible: false, left: 0, top: 0 });
+  const [resizeTip, setResizeTip] = useState<{ visible: boolean; left: number; top: number; text: string }>({ visible: false, left: 0, top: 0, text: '' });
+  const lastImageIdsRef = useRef<Set<number>>(new Set());
+  const scheduledDeletesRef = useRef<Map<number, number>>(new Map());
+
+  // Upload image helper -> returns served URL
+  const uploadImageFile = async (file: File): Promise<string | null> => {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/images', { method: 'POST', body: form });
+      if (!res.ok) return null;
+      const { id } = await res.json();
+      return `/api/images?id=${id}`;
+    } catch {
+      return null;
+    }
+  };
 
   // Add custom styles for code blocks
   useEffect(() => {
@@ -348,6 +490,23 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
         background: transparent;
         color: #f3f4f6;
       }
+
+      /* Link styles inside editor */
+      .tiptap a {
+        color: #059669;
+        text-decoration: underline;
+        /* Disable native link interaction during editing by default */
+        pointer-events: none;
+        cursor: text;
+      }
+      .tiptap a:hover {
+        color: #047857;
+      }
+      /* Re-enable link interaction only when Ctrl/Cmd pressed */
+      [data-allow-link-click='true'] .tiptap a {
+        pointer-events: auto;
+        cursor: pointer;
+      }
       
       /* Syntax highlighting colors */
       .token.keyword { color: #f87171 !important; }
@@ -359,6 +518,47 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       .token.punctuation { color: #d1d5db !important; }
       .token.class-name { color: #a78bfa !important; }
       .token.variable { color: #f3f4f6 !important; }
+
+      /* Table styles */
+      .tiptap table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+      }
+      .tiptap th, .tiptap td {
+        border: 1px solid #e5e7eb;
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+      }
+      .tiptap thead th {
+        background: #f9fafb;
+        font-weight: 600;
+      }
+      .tiptap tbody tr:nth-child(odd) {
+        background: #fafafa;
+      }
+
+      /* Column resize UI (TipTap/ProseMirror tables) */
+      .tiptap .column-resize-handle {
+        position: absolute;
+        right: -2px;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: rgba(16, 185, 129, 0.25); /* emerald-500 @ 25% */
+        cursor: col-resize;
+        z-index: 5;
+      }
+      .tiptap .resize-cursor {
+        cursor: col-resize !important;
+      }
+      .tiptap .selectedCell::after {
+        content: '';
+        position: absolute;
+        left: 0; right: 0; top: 0; bottom: 0;
+        background: rgba(16, 185, 129, 0.08);
+        pointer-events: none;
+      }
     `;
     document.head.appendChild(style);
     
@@ -389,8 +589,24 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       StarterKit.configure({
         codeBlock: false,
       }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        protocols: ['http', 'https', 'mailto', 'tel'],
+      }),
+      Image.configure({
+        HTMLAttributes: {
+          class: 'rounded-md max-w-full h-auto',
+        },
+        allowBase64: true,
+      }),
       CodeBlockWithToolbar.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: value,
     onUpdate: ({ editor }) => {
@@ -400,62 +616,157 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       }
     },
     immediatelyRender: false,
+    editorProps: {
+      handleDOMEvents: {
+        dragenter: (view, event) => {
+          const e = event as DragEvent;
+          if (!e.dataTransfer) return false;
+          e.preventDefault();
+          try { e.dataTransfer.dropEffect = 'copy'; } catch {}
+          return true;
+        },
+        dragover: (view, event) => {
+          const e = event as DragEvent;
+          if (!e.dataTransfer) return false;
+          const hasFiles = e.dataTransfer.files && e.dataTransfer.files.length > 0;
+          const hasUrl = (e.dataTransfer.types || []).includes('text/uri-list');
+          if (hasFiles || hasUrl) {
+            e.preventDefault();
+            try { e.dataTransfer.dropEffect = 'copy'; } catch {}
+            return true;
+          }
+          return false;
+        },
+        mousedown: (view, event) => {
+          if (!view.editable) return false;
+          const e = event as MouseEvent;
+          const target = e.target as HTMLElement | null;
+          if (!target) return false;
+          const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+          if (!anchor) return false;
+          // Only intercept Ctrl/Cmd so we can open in click handler;
+          // otherwise allow ProseMirror to place the caret.
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+          }
+          return false;
+        },
+        click: (view, event) => {
+          if (!view.editable) return false;
+          const e = event as MouseEvent;
+          const target = e.target as HTMLElement | null;
+          if (!target) return false;
+          const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+          if (!anchor) return false;
+          const href = anchor.getAttribute('href');
+          if (!href) return true;
+          if (e.ctrlKey || e.metaKey) {
+            // Ctrl/Cmd-click: open in new tab and stop handling
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              window.open(href, '_blank', 'noopener');
+            } catch {}
+            return true;
+          }
+          // Normal click: stop everything and do not navigate
+          e.preventDefault();
+          e.stopImmediatePropagation?.();
+          return true;
+        },
+      },
+      handlePaste(view, event) {
+        const e = event as ClipboardEvent;
+        const items = e.clipboardData?.items;
+        if (!items || items.length === 0) return false;
+        const imageItems = Array.from(items).filter(it => it.type && it.type.startsWith('image/'));
+        if (imageItems.length === 0) return false;
+        e.preventDefault();
+        imageItems.forEach(async it => {
+          const file = it.getAsFile();
+          if (!file) return;
+          const url = await uploadImageFile(file);
+          if (!url) return;
+          try {
+            const imageNode = view.state.schema.nodes.image.create({ src: url, alt: file.name });
+            const tr = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+            view.dispatch(tr);
+          } catch {}
+        });
+        return true;
+      },
+      handleDrop(view, event) {
+        const e = event as DragEvent;
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) {
+          // Fall back to URL drops
+          const urlList = e.dataTransfer?.getData('text/uri-list');
+          if (!urlList) return false;
+          e.preventDefault();
+          e.stopPropagation();
+          const coords = { left: e.clientX, top: e.clientY } as any;
+          const posAt = view.posAtCoords(coords)?.pos;
+          if (typeof posAt === 'number') {
+            const $pos = view.state.doc.resolve(posAt);
+            const tr = view.state.tr.setSelection(new TextSelection($pos));
+            view.dispatch(tr);
+          }
+          const firstUrl = urlList.split('\n')[0];
+          (async () => {
+            try {
+              const resp = await fetch(firstUrl);
+              const blob = await resp.blob();
+              if (!blob.type.startsWith('image/')) return;
+              const form = new FormData();
+              form.append('file', new File([blob], 'dropped-image', { type: blob.type }));
+              const res = await fetch('/api/images', { method: 'POST', body: form });
+              if (!res.ok) return;
+              const { id } = await res.json();
+              const url = `/api/images?id=${id}`;
+              const imageNode = view.state.schema.nodes.image.create({ src: url, alt: 'image' });
+              const tr2 = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+              view.dispatch(tr2);
+            } catch {}
+          })();
+          return true;
+        }
+        const imageFiles = Array.from(files).filter(f => (f.type && f.type.startsWith('image/')) || (!f.type && /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name)) );
+        if (imageFiles.length === 0) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        // Determine drop position
+        const coords = { left: e.clientX, top: e.clientY } as any;
+        const posAt = view.posAtCoords(coords)?.pos;
+        if (typeof posAt === 'number') {
+          const $pos = view.state.doc.resolve(posAt);
+          const tr = view.state.tr.setSelection(new TextSelection($pos));
+          view.dispatch(tr);
+        }
+        imageFiles.forEach(async file => {
+          const url = await uploadImageFile(file);
+          if (!url) return;
+          try {
+            const imageNode = view.state.schema.nodes.image.create({ src: url, alt: file.name });
+            const tr = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+            view.dispatch(tr);
+          } catch {}
+        });
+        return true;
+      },
+    },
   });
 
   useEffect(() => {
-    if (editor && !isMarkdownMode && value !== editor.getHTML()) {
+    if (editor && value !== editor.getHTML()) {
       editor.commands.setContent(value);
     }
-  }, [value, editor, isMarkdownMode]);
+  }, [value, editor]);
 
-  const handleMarkdownChange = (markdown: string) => {
-    onChange(markdown);
-  };
+  // Link clicks handled via editorProps.handleDOMEvents.click
 
-  const convertMarkdownToHtml = (markdown: string) => {
-    // Simple conversion for basic Markdown to HTML
-    return markdown
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
-      .replace(/^- (.*$)/gim, '<li>$1</li>')
-      .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/\n/g, '<br>');
-  };
-
-  const convertHtmlToMarkdown = (html: string) => {
-    // Simple conversion from HTML to Markdown
-    return html
-      .replace(/<h1>(.*?)<\/h1>/g, '# $1\n')
-      .replace(/<h2>(.*?)<\/h2>/g, '## $1\n')
-      .replace(/<h3>(.*?)<\/h3>/g, '### $1\n')
-      .replace(/<strong>(.*?)<\/strong>/g, '**$1**')
-      .replace(/<em>(.*?)<\/em>/g, '*$1*')
-      .replace(/<code>(.*?)<\/code>/g, '`$1`')
-      .replace(/<li>(.*?)<\/li>/g, '- $1\n')
-      .replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, '```\n$1\n```')
-      .replace(/<br>/g, '\n')
-      .replace(/<p>(.*?)<\/p>/g, '$1\n');
-  };
-
-  const switchToVisual = () => {
-    if (isMarkdownMode) {
-      const html = convertMarkdownToHtml(value);
-      editor?.commands.setContent(html);
-      setIsMarkdownMode(false);
-    }
-  };
-
-  const switchToMarkdown = () => {
-    if (!isMarkdownMode) {
-      const markdown = convertHtmlToMarkdown(editor?.getHTML() || '');
-      onChange(markdown);
-      setIsMarkdownMode(true);
-    }
-  };
+  // Removed Markdown mode: component now operates in Visual (HTML) mode only
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -471,59 +782,294 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     return () => {};
   }, [editor]);
 
-  return (
-    <div className="h-full flex flex-col">
-      {/* Editor Mode Toggle */}
-      <div className="flex items-center space-x-2 mb-4 p-2 bg-gray-50 rounded-lg">
-        <button
-          onClick={switchToVisual}
-          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-            !isMarkdownMode
-              ? 'bg-emerald-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Visual
-        </button>
-        <button
-          onClick={switchToMarkdown}
-          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-            isMarkdownMode
-              ? 'bg-emerald-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Markdown
-        </button>
-      </div>
+  // Track selection to position inline table menu
+  useEffect(() => {
+    if (!editor) return;
+    const updateMenu = () => {
+      try {
+        const isInTable = editor.isActive('table');
+        if (!isInTable) {
+          setTableMenu((m) => (m.visible ? { visible: false, left: 0, top: 0 } : m));
+          return;
+        }
+        const view = editor.view;
+        const { from } = editor.state.selection as any;
+        const start = view.coordsAtPos(from);
+        const container = editorPaneRef.current;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const left = Math.max(8, start.left - rect.left);
+        const top = Math.max(8, start.top - rect.top - 36);
+        setTableMenu({ visible: true, left, top });
+      } catch {
+        // ignore
+      }
+    };
+    const unsubscribe = editor.on('selectionUpdate', updateMenu);
+    const unsubscribe2 = editor.on('transaction', updateMenu);
+    updateMenu();
+    return () => {
+      editor.off('selectionUpdate', updateMenu);
+      editor.off('transaction', updateMenu);
+    };
+  }, [editor]);
 
+  // Immediate image cleanup with grace period (prevents DB bloat if user backspaces)
+  useEffect(() => {
+    if (!editor) return;
+
+    const getCurrentImageIds = (): Set<number> => {
+      const ids = new Set<number>();
+      try {
+        const html = editor.getHTML();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const imgs = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
+        imgs.forEach(img => {
+          try {
+            const u = new URL(img.getAttribute('src') || '', window.location.origin);
+            const id = u.searchParams.get('id');
+            if (id) ids.add(parseInt(id));
+          } catch {}
+        });
+      } catch {}
+      return ids;
+    };
+
+    // Initialize on mount
+    lastImageIdsRef.current = getCurrentImageIds();
+
+    const handleDocChange = () => {
+      const currentIds = getCurrentImageIds();
+      // Cancel any scheduled delete for images that reappeared
+      scheduledDeletesRef.current.forEach((timeoutId, imgId) => {
+        if (currentIds.has(imgId)) {
+          clearTimeout(timeoutId);
+          scheduledDeletesRef.current.delete(imgId);
+        }
+      });
+      // Schedule deletes for removed ids
+      lastImageIdsRef.current.forEach((imgId) => {
+        if (!currentIds.has(imgId) && !scheduledDeletesRef.current.has(imgId)) {
+          const t = window.setTimeout(async () => {
+            // Double-check it has not reappeared
+            const latestIds = getCurrentImageIds();
+            if (!latestIds.has(imgId)) {
+              try { await fetch(`/api/images?id=${imgId}`, { method: 'DELETE' }); } catch {}
+            }
+            scheduledDeletesRef.current.delete(imgId);
+          }, 5000); // 5s grace period for undo
+          scheduledDeletesRef.current.set(imgId, t);
+        }
+      });
+      lastImageIdsRef.current = currentIds;
+    };
+
+    const offUpdate = editor.on('update', handleDocChange);
+    const offTransaction = editor.on('transaction', handleDocChange);
+    // Run once initially
+    handleDocChange();
+
+    return () => {
+      editor.off('update', handleDocChange);
+      editor.off('transaction', handleDocChange);
+      // Clear any pending timers
+      scheduledDeletesRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+      scheduledDeletesRef.current.clear();
+    };
+  }, [editor]);
+
+  // Column-resize handle tooltip (hover/drag line indicator)
+  useEffect(() => {
+    const pane = editorPaneRef.current;
+    if (!pane || !editor) return;
+
+    const updateTipPosition = (e: MouseEvent, text?: string) => {
+      const rect = pane.getBoundingClientRect();
+      setResizeTip(prev => ({
+        visible: true,
+        left: e.clientX - rect.left + 8,
+        top: e.clientY - rect.top + 12,
+        text: (text ?? prev.text) || 'Drag to resize column',
+      }));
+    };
+
+    const onOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) return;
+      updateTipPosition(e, 'Drag to resize column');
+    };
+
+    const onMove = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) {
+        setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) {
+        setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+      const cell = handle.closest('th,td') as HTMLElement | null;
+      const widthPx = cell ? Math.round(cell.offsetWidth) : undefined;
+      updateTipPosition(e, widthPx ? `Width: ${widthPx}px` : 'Drag to resize column');
+    };
+
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) return;
+      updateTipPosition(e, 'Resizing…');
+      const onUp = () => {
+        setResizeTip(prev => ({ ...prev, visible: false }));
+        document.removeEventListener('mouseup', onUp, true);
+      };
+      document.addEventListener('mouseup', onUp, true);
+    };
+
+    const onLeave = () => setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+
+    pane.addEventListener('mouseover', onOver, true);
+    pane.addEventListener('mousemove', onMove, true);
+    pane.addEventListener('mousedown', onDown, true);
+    pane.addEventListener('mouseleave', onLeave, true);
+    return () => {
+      pane.removeEventListener('mouseover', onOver, true);
+      pane.removeEventListener('mousemove', onMove, true);
+      pane.removeEventListener('mousedown', onDown, true);
+      pane.removeEventListener('mouseleave', onLeave, true);
+    };
+  }, [editor]);
+
+  // Final safety net: capture-phase blocker on the editor container
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (ev: Event) => {
+      const e = ev as MouseEvent;
+      if (!editor?.isEditable) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      if (e.ctrlKey || e.metaKey) {
+        // Block native navigation; allow inner handler to open window
+        e.preventDefault();
+        return;
+      }
+      // Block normal navigation entirely while editing
+      e.preventDefault();
+      // Stop bubbling to any outer listeners
+      // Using optional chaining for cross-browser safety
+      (e as any).stopImmediatePropagation?.();
+      e.stopPropagation();
+    };
+    el.addEventListener('click', handler, true);
+    return () => el.removeEventListener('click', handler, true);
+  }, [editor]);
+
+  // Toggle link interactivity via Ctrl/Cmd key to support pointer-events strategy
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        el.setAttribute('data-allow-link-click', 'true');
+      }
+    };
+    const onKeyUp = () => {
+      el.removeAttribute('data-allow-link-click');
+    };
+    const onBlur = () => {
+      el.removeAttribute('data-allow-link-click');
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', onBlur, true);
+    };
+  }, []);
+
+  // Global capture-phase guard to beat any outer handlers
+  useEffect(() => {
+    const handler = (ev: MouseEvent) => {
+      if (!editor?.isEditable) return;
+      const root = editor.view.dom as HTMLElement;
+      const target = ev.target as HTMLElement | null;
+      if (!target || !root.contains(target)) return;
+      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      if (ev.ctrlKey || ev.metaKey) {
+        ev.preventDefault();
+        try { window.open(href, '_blank', 'noopener'); } catch {}
+      } else {
+        ev.preventDefault();
+      }
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [editor]);
+
+  return (
+    <div ref={containerRef} className="h-full flex flex-col">
       {/* Editor Content */}
       <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
-        {isMarkdownMode ? (
-          <textarea
-            value={value}
-            onChange={(e) => handleMarkdownChange(e.target.value)}
-            className="w-full h-full border-none outline-none bg-transparent resize-none text-gray-900 placeholder-gray-500 text-lg leading-relaxed font-mono p-4"
-            placeholder={placeholder}
+        <div className="h-full flex flex-col">
+          <Toolbar
+            editor={editor}
+            onToolbarAction={() => {
+              isToolbarActionRef.current = true;
+              setForceUpdate(prev => prev + 1); // Force re-render
+            }}
           />
-        ) : (
-          <div className="h-full flex flex-col">
-            <Toolbar
+          <div ref={editorPaneRef} className="flex-1 p-4 overflow-y-auto min-h-0 relative">
+            {resizeTip.visible && (
+              <div
+                className="absolute z-50 text-[11px] px-2 py-1 rounded bg-gray-800 text-white shadow"
+                style={{ left: resizeTip.left, top: resizeTip.top }}
+              >
+                {resizeTip.text}
+              </div>
+            )}
+            {/* Inline table controls overlay */}
+            {editor && tableMenu.visible && (
+              <div
+                className="absolute z-50 rounded-md shadow bg-white border border-gray-200 p-1 flex flex-wrap gap-1"
+                style={{ left: tableMenu.left, top: Math.max(0, tableMenu.top) }}
+              >
+                <button onClick={() => editor.chain().focus().addRowBefore().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Row Above">+Row↑</button>
+                <button onClick={() => editor.chain().focus().addRowAfter().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Row Below">+Row↓</button>
+                <button onClick={() => editor.chain().focus().deleteRow().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Delete Row">−Row</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().addColumnBefore().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Column Left">+Col←</button>
+                <button onClick={() => editor.chain().focus().addColumnAfter().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Column Right">+Col→</button>
+                <button onClick={() => editor.chain().focus().deleteColumn().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Delete Column">−Col</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().toggleHeaderRow().run()} className={`px-2 py-1 text-xs rounded border ${editor.isActive('tableHeader') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-800'}`} title="Toggle Header Row">Header</button>
+                <button onClick={() => editor.chain().focus().mergeCells().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Merge Cells">Merge</button>
+                <button onClick={() => editor.chain().focus().splitCell().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Split Cell">Split</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().deleteTable().run()} className="px-2 py-1 text-xs rounded bg-red-50 hover:bg-red-100 border border-red-200 text-red-700" title="Delete Table">Delete</button>
+              </div>
+            )}
+
+            <EditorContent
               editor={editor}
-              onToolbarAction={() => {
-                isToolbarActionRef.current = true;
-                setForceUpdate(prev => prev + 1); // Force re-render
-              }}
+              className="tiptap h-full"
+              key={forceUpdate}
             />
-            <div className="flex-1 p-4 overflow-y-auto min-h-0">
-              <EditorContent
-                editor={editor}
-                className="tiptap h-full"
-                key={forceUpdate}
-              />
-            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

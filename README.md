@@ -1,6 +1,6 @@
 # Emerald Notes
 
-A modern, feature-rich note-taking application built with Next.js, featuring a dual editor with rich text and markdown support, tag management, and local SQLite storage.
+A modern, feature-rich note-taking application built with Next.js, featuring a rich text editor, tag management, and local SQLite storage.
 
 ![Emerald Notes](https://img.shields.io/badge/Next.js-15.4.6-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)
@@ -8,12 +8,11 @@ A modern, feature-rich note-taking application built with Next.js, featuring a d
 
 ## ✨ Features
 
-- **Dual Editor**: Switch between rich text editing and markdown preview
+- **Rich Text Editor**: Advanced text editing with formatting options
 - **Tag Management**: Organize notes with custom tags
 - **Local Storage**: SQLite database for reliable data persistence
 - **Real-time Updates**: Auto-save functionality as you type
 - **Modern UI**: Clean, responsive design with Tailwind CSS
-- **Markdown Support**: Full markdown rendering with syntax highlighting
 - **Search & Filter**: Find notes quickly with built-in search
 - **Archive System**: Archive notes instead of deleting them
 
@@ -72,7 +71,7 @@ src/
 │   ├── layout.tsx      # Root layout
 │   └── page.tsx        # Main application page
 ├── components/          # React components
-│   ├── DualEditor.tsx  # Rich text + markdown editor
+│   ├── DualEditor.tsx  # Rich text editor
 │   └── TagInput.tsx    # Tag input component
 └── lib/
     └── database.ts     # SQLite database configuration
@@ -85,24 +84,15 @@ src/
 - Notes are automatically saved as you type
 
 ### Editing Notes
-- Toggle between "Edit" and "View" modes
 - Use the rich text editor for formatting
-- Switch to markdown view for code-friendly editing
+- Notes are displayed in a clean, readable format
 
 ### Managing Tags
 - Add tags to organize your notes
 - Tags are displayed as colored badges
 - Filter notes by tags (coming soon)
 
-### Markdown Support
-The application supports full markdown syntax including:
-- Headers (# ## ###)
-- **Bold** and *italic* text
-- `Inline code` and code blocks
-- Lists (ordered and unordered)
-- Links and images
-- Blockquotes
-- Tables (via remark-gfm)
+
 
 ## 🗄️ Database
 
@@ -126,9 +116,8 @@ The database file (`notes.db`) is created automatically in the project root.
 
 - **Frontend**: Next.js 15, React 19, TypeScript
 - **Styling**: Tailwind CSS 4
-- **Editor**: TipTap (rich text) + React Markdown
+- **Editor**: TipTap (rich text editor)
 - **Database**: SQLite with better-sqlite3
-- **Syntax Highlighting**: Prism.js and highlight.js
 - **Development**: ESLint, Turbopack
 
 ## 🤝 Contributing
@@ -147,5 +136,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Built with [Next.js](https://nextjs.org/)
 - Rich text editing powered by [TipTap](https://tiptap.dev/)
-- Markdown rendering with [React Markdown](https://github.com/remarkjs/react-markdown)
 - Database management with [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
