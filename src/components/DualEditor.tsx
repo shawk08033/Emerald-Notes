@@ -382,6 +382,7 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isToolbarActionRef = useRef(false);
   const [forceUpdate, setForceUpdate] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Add custom styles for code blocks
   useEffect(() => {
@@ -451,9 +452,17 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       .tiptap a {
         color: #059669;
         text-decoration: underline;
+        /* Disable native link interaction during editing by default */
+        pointer-events: none;
+        cursor: text;
       }
       .tiptap a:hover {
         color: #047857;
+      }
+      /* Re-enable link interaction only when Ctrl/Cmd pressed */
+      [data-allow-link-click='true'] .tiptap a {
+        pointer-events: auto;
+        cursor: pointer;
       }
       
       /* Syntax highlighting colors */
@@ -536,6 +545,49 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       }
     },
     immediatelyRender: false,
+    editorProps: {
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          if (!view.editable) return false;
+          const e = event as MouseEvent;
+          const target = e.target as HTMLElement | null;
+          if (!target) return false;
+          const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+          if (!anchor) return false;
+          // Only intercept Ctrl/Cmd so we can open in click handler;
+          // otherwise allow ProseMirror to place the caret.
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+          }
+          return false;
+        },
+        click: (view, event) => {
+          if (!view.editable) return false;
+          const e = event as MouseEvent;
+          const target = e.target as HTMLElement | null;
+          if (!target) return false;
+          const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+          if (!anchor) return false;
+          const href = anchor.getAttribute('href');
+          if (!href) return true;
+          if (e.ctrlKey || e.metaKey) {
+            // Ctrl/Cmd-click: open in new tab and stop handling
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              window.open(href, '_blank', 'noopener');
+            } catch {}
+            return true;
+          }
+          // Normal click: stop everything and do not navigate
+          e.preventDefault();
+          e.stopImmediatePropagation?.();
+          return true;
+        },
+      },
+    },
   });
 
   useEffect(() => {
@@ -544,34 +596,7 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     }
   }, [value, editor]);
 
-  // Allow opening links only with Ctrl/Cmd-click in edit mode
-  useEffect(() => {
-    if (!editor) return;
-    const dom = editor.view.dom as HTMLElement;
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
-      if (!anchor) return;
-      const href = anchor.getAttribute('href');
-      if (!href) return;
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        try {
-          window.open(href, '_blank', 'noopener');
-        } catch {
-          // ignore
-        }
-      } else {
-        // Prevent accidental navigation on plain click while editing
-        e.preventDefault();
-      }
-    };
-    dom.addEventListener('click', handleClick);
-    return () => {
-      dom.removeEventListener('click', handleClick);
-    };
-  }, [editor]);
+  // Link clicks handled via editorProps.handleDOMEvents.click
 
   // Removed Markdown mode: component now operates in Visual (HTML) mode only
 
@@ -589,8 +614,84 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     return () => {};
   }, [editor]);
 
+  // Final safety net: capture-phase blocker on the editor container
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (ev: Event) => {
+      const e = ev as MouseEvent;
+      if (!editor?.isEditable) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      if (e.ctrlKey || e.metaKey) {
+        // Block native navigation; allow inner handler to open window
+        e.preventDefault();
+        return;
+      }
+      // Block normal navigation entirely while editing
+      e.preventDefault();
+      // Stop bubbling to any outer listeners
+      // Using optional chaining for cross-browser safety
+      (e as any).stopImmediatePropagation?.();
+      e.stopPropagation();
+    };
+    el.addEventListener('click', handler, true);
+    return () => el.removeEventListener('click', handler, true);
+  }, [editor]);
+
+  // Toggle link interactivity via Ctrl/Cmd key to support pointer-events strategy
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        el.setAttribute('data-allow-link-click', 'true');
+      }
+    };
+    const onKeyUp = () => {
+      el.removeAttribute('data-allow-link-click');
+    };
+    const onBlur = () => {
+      el.removeAttribute('data-allow-link-click');
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', onBlur, true);
+    };
+  }, []);
+
+  // Global capture-phase guard to beat any outer handlers
+  useEffect(() => {
+    const handler = (ev: MouseEvent) => {
+      if (!editor?.isEditable) return;
+      const root = editor.view.dom as HTMLElement;
+      const target = ev.target as HTMLElement | null;
+      if (!target || !root.contains(target)) return;
+      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      if (ev.ctrlKey || ev.metaKey) {
+        ev.preventDefault();
+        try { window.open(href, '_blank', 'noopener'); } catch {}
+      } else {
+        ev.preventDefault();
+      }
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [editor]);
+
   return (
-    <div className="h-full flex flex-col">
+    <div ref={containerRef} className="h-full flex flex-col">
       {/* Editor Content */}
       <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
         <div className="h-full flex flex-col">
