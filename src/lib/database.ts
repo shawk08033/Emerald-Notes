@@ -71,6 +71,17 @@ export function initDatabase() {
       )
     `);
 
+    // Create images table to store binary image data separately
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT,
+        mime TEXT NOT NULL,
+        data BLOB NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
@@ -194,3 +205,16 @@ export const folderOperations = {
 };
 
 export default db;
+
+// Image operations
+export const imageOperations = {
+  create: db.prepare(`
+    INSERT INTO images (filename, mime, data) VALUES (?, ?, ?)
+  `),
+  getById: db.prepare(`
+    SELECT id, filename, mime, data FROM images WHERE id = ?
+  `),
+  delete: db.prepare(`
+    DELETE FROM images WHERE id = ?
+  `),
+};

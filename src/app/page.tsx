@@ -272,6 +272,28 @@ export default function Home() {
 
   const updateNote = async (note: Note) => {
     try {
+      // Sweep removed images: compare previous and new content image ids (DOM-based parsing)
+      const prev = notes.find(n => n.id === note.id);
+      const getIds = (html: string | undefined) => {
+        const ids = new Set<number>();
+        if (!html) return ids;
+        try {
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const images = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
+          images.forEach(img => {
+            try {
+              const u = new URL(img.getAttribute('src') || '', window.location.origin);
+              const id = u.searchParams.get('id');
+              if (id) ids.add(parseInt(id));
+            } catch {}
+          });
+        } catch {}
+        return ids;
+      };
+      const beforeIds = getIds(prev?.content);
+      const afterIds = getIds(note.content);
+      const removed: number[] = Array.from(beforeIds).filter(id => !afterIds.has(id));
+
       const response = await fetch(`/api/notes/${note.id}`, {
         method: 'PUT',
         headers: {
@@ -284,6 +306,10 @@ export default function Home() {
         const updatedNote = await response.json();
         setNotes(prev => prev.map(n => n.id === note.id ? updatedNote : n));
         setSelectedNote(updatedNote);
+        // Fire-and-forget deletion of removed images
+        removed.forEach(async (id) => {
+          try { await fetch(`/api/images?id=${id}`, { method: 'DELETE' }); } catch {}
+        });
       }
     } catch (error) {
       console.error('Error updating note:', error);

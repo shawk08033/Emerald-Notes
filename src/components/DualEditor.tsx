@@ -7,11 +7,13 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
 import { createLowlight } from 'lowlight';
+import { TextSelection, Selection } from '@tiptap/pm/state';
 import xml from 'highlight.js/lib/languages/xml';
 import css from 'highlight.js/lib/languages/css';
 import js from 'highlight.js/lib/languages/javascript';
@@ -210,6 +212,48 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
 
+      {/* Images */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(async () => {
+            const url = window.prompt('Image URL');
+            if (!url) return;
+            editor.chain().focus().setImage({ src: url }).run();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Image by URL"
+        >
+          Img URL
+        </button>
+        <button
+          onClick={() => handleButtonClick(async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const form = new FormData();
+              form.append('file', file);
+              const res = await fetch('/api/images', { method: 'POST', body: form });
+              if (!res.ok) return;
+              const { id } = await res.json();
+              const url = `/api/images?id=${id}`;
+              if (!url) return;
+              editor.chain().focus().setImage({ src: url, alt: file.name }).run();
+            };
+            input.click();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Upload Image"
+        >
+          Upload
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
       {/* Link (toggle) */}
       <div className="flex items-center gap-1">
         <button
@@ -366,6 +410,22 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
   const editorPaneRef = useRef<HTMLDivElement | null>(null);
   const [tableMenu, setTableMenu] = useState<{ visible: boolean; left: number; top: number }>({ visible: false, left: 0, top: 0 });
   const [resizeTip, setResizeTip] = useState<{ visible: boolean; left: number; top: number; text: string }>({ visible: false, left: 0, top: 0, text: '' });
+  const lastImageIdsRef = useRef<Set<number>>(new Set());
+  const scheduledDeletesRef = useRef<Map<number, number>>(new Map());
+
+  // Upload image helper -> returns served URL
+  const uploadImageFile = async (file: File): Promise<string | null> => {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/images', { method: 'POST', body: form });
+      if (!res.ok) return null;
+      const { id } = await res.json();
+      return `/api/images?id=${id}`;
+    } catch {
+      return null;
+    }
+  };
 
   // Add custom styles for code blocks
   useEffect(() => {
@@ -535,6 +595,12 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
         linkOnPaste: true,
         protocols: ['http', 'https', 'mailto', 'tel'],
       }),
+      Image.configure({
+        HTMLAttributes: {
+          class: 'rounded-md max-w-full h-auto',
+        },
+        allowBase64: true,
+      }),
       CodeBlockWithToolbar.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
       Table.configure({ resizable: true }),
@@ -552,6 +618,25 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     immediatelyRender: false,
     editorProps: {
       handleDOMEvents: {
+        dragenter: (view, event) => {
+          const e = event as DragEvent;
+          if (!e.dataTransfer) return false;
+          e.preventDefault();
+          try { e.dataTransfer.dropEffect = 'copy'; } catch {}
+          return true;
+        },
+        dragover: (view, event) => {
+          const e = event as DragEvent;
+          if (!e.dataTransfer) return false;
+          const hasFiles = e.dataTransfer.files && e.dataTransfer.files.length > 0;
+          const hasUrl = (e.dataTransfer.types || []).includes('text/uri-list');
+          if (hasFiles || hasUrl) {
+            e.preventDefault();
+            try { e.dataTransfer.dropEffect = 'copy'; } catch {}
+            return true;
+          }
+          return false;
+        },
         mousedown: (view, event) => {
           if (!view.editable) return false;
           const e = event as MouseEvent;
@@ -591,6 +676,84 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
           e.stopImmediatePropagation?.();
           return true;
         },
+      },
+      handlePaste(view, event) {
+        const e = event as ClipboardEvent;
+        const items = e.clipboardData?.items;
+        if (!items || items.length === 0) return false;
+        const imageItems = Array.from(items).filter(it => it.type && it.type.startsWith('image/'));
+        if (imageItems.length === 0) return false;
+        e.preventDefault();
+        imageItems.forEach(async it => {
+          const file = it.getAsFile();
+          if (!file) return;
+          const url = await uploadImageFile(file);
+          if (!url) return;
+          try {
+            const imageNode = view.state.schema.nodes.image.create({ src: url, alt: file.name });
+            const tr = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+            view.dispatch(tr);
+          } catch {}
+        });
+        return true;
+      },
+      handleDrop(view, event) {
+        const e = event as DragEvent;
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) {
+          // Fall back to URL drops
+          const urlList = e.dataTransfer?.getData('text/uri-list');
+          if (!urlList) return false;
+          e.preventDefault();
+          e.stopPropagation();
+          const coords = { left: e.clientX, top: e.clientY } as any;
+          const posAt = view.posAtCoords(coords)?.pos;
+          if (typeof posAt === 'number') {
+            const $pos = view.state.doc.resolve(posAt);
+            const tr = view.state.tr.setSelection(new TextSelection($pos));
+            view.dispatch(tr);
+          }
+          const firstUrl = urlList.split('\n')[0];
+          (async () => {
+            try {
+              const resp = await fetch(firstUrl);
+              const blob = await resp.blob();
+              if (!blob.type.startsWith('image/')) return;
+              const form = new FormData();
+              form.append('file', new File([blob], 'dropped-image', { type: blob.type }));
+              const res = await fetch('/api/images', { method: 'POST', body: form });
+              if (!res.ok) return;
+              const { id } = await res.json();
+              const url = `/api/images?id=${id}`;
+              const imageNode = view.state.schema.nodes.image.create({ src: url, alt: 'image' });
+              const tr2 = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+              view.dispatch(tr2);
+            } catch {}
+          })();
+          return true;
+        }
+        const imageFiles = Array.from(files).filter(f => (f.type && f.type.startsWith('image/')) || (!f.type && /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name)) );
+        if (imageFiles.length === 0) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        // Determine drop position
+        const coords = { left: e.clientX, top: e.clientY } as any;
+        const posAt = view.posAtCoords(coords)?.pos;
+        if (typeof posAt === 'number') {
+          const $pos = view.state.doc.resolve(posAt);
+          const tr = view.state.tr.setSelection(new TextSelection($pos));
+          view.dispatch(tr);
+        }
+        imageFiles.forEach(async file => {
+          const url = await uploadImageFile(file);
+          if (!url) return;
+          try {
+            const imageNode = view.state.schema.nodes.image.create({ src: url, alt: file.name });
+            const tr = view.state.tr.replaceSelectionWith(imageNode, false).scrollIntoView();
+            view.dispatch(tr);
+          } catch {}
+        });
+        return true;
       },
     },
   });
@@ -648,6 +811,70 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     return () => {
       editor.off('selectionUpdate', updateMenu);
       editor.off('transaction', updateMenu);
+    };
+  }, [editor]);
+
+  // Immediate image cleanup with grace period (prevents DB bloat if user backspaces)
+  useEffect(() => {
+    if (!editor) return;
+
+    const getCurrentImageIds = (): Set<number> => {
+      const ids = new Set<number>();
+      try {
+        const html = editor.getHTML();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const imgs = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
+        imgs.forEach(img => {
+          try {
+            const u = new URL(img.getAttribute('src') || '', window.location.origin);
+            const id = u.searchParams.get('id');
+            if (id) ids.add(parseInt(id));
+          } catch {}
+        });
+      } catch {}
+      return ids;
+    };
+
+    // Initialize on mount
+    lastImageIdsRef.current = getCurrentImageIds();
+
+    const handleDocChange = () => {
+      const currentIds = getCurrentImageIds();
+      // Cancel any scheduled delete for images that reappeared
+      scheduledDeletesRef.current.forEach((timeoutId, imgId) => {
+        if (currentIds.has(imgId)) {
+          clearTimeout(timeoutId);
+          scheduledDeletesRef.current.delete(imgId);
+        }
+      });
+      // Schedule deletes for removed ids
+      lastImageIdsRef.current.forEach((imgId) => {
+        if (!currentIds.has(imgId) && !scheduledDeletesRef.current.has(imgId)) {
+          const t = window.setTimeout(async () => {
+            // Double-check it has not reappeared
+            const latestIds = getCurrentImageIds();
+            if (!latestIds.has(imgId)) {
+              try { await fetch(`/api/images?id=${imgId}`, { method: 'DELETE' }); } catch {}
+            }
+            scheduledDeletesRef.current.delete(imgId);
+          }, 5000); // 5s grace period for undo
+          scheduledDeletesRef.current.set(imgId, t);
+        }
+      });
+      lastImageIdsRef.current = currentIds;
+    };
+
+    const offUpdate = editor.on('update', handleDocChange);
+    const offTransaction = editor.on('transaction', handleDocChange);
+    // Run once initially
+    handleDocChange();
+
+    return () => {
+      editor.off('update', handleDocChange);
+      editor.off('transaction', handleDocChange);
+      // Clear any pending timers
+      scheduledDeletesRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+      scheduledDeletesRef.current.clear();
     };
   }, [editor]);
 
