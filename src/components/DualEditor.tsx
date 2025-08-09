@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import * as TiptapReact from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -349,27 +350,6 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
         >
           Table
         </button>
-        <button
-          onClick={() => handleButtonClick(() => editor.chain().focus().addRowAfter().run())}
-          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
-          title="Add Row"
-        >
-          +Row
-        </button>
-        <button
-          onClick={() => handleButtonClick(() => editor.chain().focus().addColumnAfter().run())}
-          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
-          title="Add Column"
-        >
-          +Col
-        </button>
-        <button
-          onClick={() => handleButtonClick(() => editor.chain().focus().deleteTable().run())}
-          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
-          title="Delete Table"
-        >
-          Del Table
-        </button>
       </div>
 
       {/* Language selector shown only inside a code block */}
@@ -383,6 +363,9 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
   const isToolbarActionRef = useRef(false);
   const [forceUpdate, setForceUpdate] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const editorPaneRef = useRef<HTMLDivElement | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ visible: boolean; left: number; top: number }>({ visible: false, left: 0, top: 0 });
+  const [resizeTip, setResizeTip] = useState<{ visible: boolean; left: number; top: number; text: string }>({ visible: false, left: 0, top: 0, text: '' });
 
   // Add custom styles for code blocks
   useEffect(() => {
@@ -493,6 +476,28 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       }
       .tiptap tbody tr:nth-child(odd) {
         background: #fafafa;
+      }
+
+      /* Column resize UI (TipTap/ProseMirror tables) */
+      .tiptap .column-resize-handle {
+        position: absolute;
+        right: -2px;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: rgba(16, 185, 129, 0.25); /* emerald-500 @ 25% */
+        cursor: col-resize;
+        z-index: 5;
+      }
+      .tiptap .resize-cursor {
+        cursor: col-resize !important;
+      }
+      .tiptap .selectedCell::after {
+        content: '';
+        position: absolute;
+        left: 0; right: 0; top: 0; bottom: 0;
+        background: rgba(16, 185, 129, 0.08);
+        pointer-events: none;
       }
     `;
     document.head.appendChild(style);
@@ -614,6 +619,104 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     return () => {};
   }, [editor]);
 
+  // Track selection to position inline table menu
+  useEffect(() => {
+    if (!editor) return;
+    const updateMenu = () => {
+      try {
+        const isInTable = editor.isActive('table');
+        if (!isInTable) {
+          setTableMenu((m) => (m.visible ? { visible: false, left: 0, top: 0 } : m));
+          return;
+        }
+        const view = editor.view;
+        const { from } = editor.state.selection as any;
+        const start = view.coordsAtPos(from);
+        const container = editorPaneRef.current;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const left = Math.max(8, start.left - rect.left);
+        const top = Math.max(8, start.top - rect.top - 36);
+        setTableMenu({ visible: true, left, top });
+      } catch {
+        // ignore
+      }
+    };
+    const unsubscribe = editor.on('selectionUpdate', updateMenu);
+    const unsubscribe2 = editor.on('transaction', updateMenu);
+    updateMenu();
+    return () => {
+      editor.off('selectionUpdate', updateMenu);
+      editor.off('transaction', updateMenu);
+    };
+  }, [editor]);
+
+  // Column-resize handle tooltip (hover/drag line indicator)
+  useEffect(() => {
+    const pane = editorPaneRef.current;
+    if (!pane || !editor) return;
+
+    const updateTipPosition = (e: MouseEvent, text?: string) => {
+      const rect = pane.getBoundingClientRect();
+      setResizeTip(prev => ({
+        visible: true,
+        left: e.clientX - rect.left + 8,
+        top: e.clientY - rect.top + 12,
+        text: (text ?? prev.text) || 'Drag to resize column',
+      }));
+    };
+
+    const onOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) return;
+      updateTipPosition(e, 'Drag to resize column');
+    };
+
+    const onMove = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) {
+        setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) {
+        setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+      const cell = handle.closest('th,td') as HTMLElement | null;
+      const widthPx = cell ? Math.round(cell.offsetWidth) : undefined;
+      updateTipPosition(e, widthPx ? `Width: ${widthPx}px` : 'Drag to resize column');
+    };
+
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const handle = target.closest('.column-resize-handle') as HTMLElement | null;
+      if (!handle) return;
+      updateTipPosition(e, 'Resizing…');
+      const onUp = () => {
+        setResizeTip(prev => ({ ...prev, visible: false }));
+        document.removeEventListener('mouseup', onUp, true);
+      };
+      document.addEventListener('mouseup', onUp, true);
+    };
+
+    const onLeave = () => setResizeTip(prev => (prev.visible ? { ...prev, visible: false } : prev));
+
+    pane.addEventListener('mouseover', onOver, true);
+    pane.addEventListener('mousemove', onMove, true);
+    pane.addEventListener('mousedown', onDown, true);
+    pane.addEventListener('mouseleave', onLeave, true);
+    return () => {
+      pane.removeEventListener('mouseover', onOver, true);
+      pane.removeEventListener('mousemove', onMove, true);
+      pane.removeEventListener('mousedown', onDown, true);
+      pane.removeEventListener('mouseleave', onLeave, true);
+    };
+  }, [editor]);
+
   // Final safety net: capture-phase blocker on the editor container
   useEffect(() => {
     const el = containerRef.current;
@@ -702,7 +805,37 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
               setForceUpdate(prev => prev + 1); // Force re-render
             }}
           />
-          <div className="flex-1 p-4 overflow-y-auto min-h-0">
+          <div ref={editorPaneRef} className="flex-1 p-4 overflow-y-auto min-h-0 relative">
+            {resizeTip.visible && (
+              <div
+                className="absolute z-50 text-[11px] px-2 py-1 rounded bg-gray-800 text-white shadow"
+                style={{ left: resizeTip.left, top: resizeTip.top }}
+              >
+                {resizeTip.text}
+              </div>
+            )}
+            {/* Inline table controls overlay */}
+            {editor && tableMenu.visible && (
+              <div
+                className="absolute z-50 rounded-md shadow bg-white border border-gray-200 p-1 flex flex-wrap gap-1"
+                style={{ left: tableMenu.left, top: Math.max(0, tableMenu.top) }}
+              >
+                <button onClick={() => editor.chain().focus().addRowBefore().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Row Above">+Row↑</button>
+                <button onClick={() => editor.chain().focus().addRowAfter().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Row Below">+Row↓</button>
+                <button onClick={() => editor.chain().focus().deleteRow().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Delete Row">−Row</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().addColumnBefore().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Column Left">+Col←</button>
+                <button onClick={() => editor.chain().focus().addColumnAfter().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Add Column Right">+Col→</button>
+                <button onClick={() => editor.chain().focus().deleteColumn().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Delete Column">−Col</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().toggleHeaderRow().run()} className={`px-2 py-1 text-xs rounded border ${editor.isActive('tableHeader') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-800'}`} title="Toggle Header Row">Header</button>
+                <button onClick={() => editor.chain().focus().mergeCells().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Merge Cells">Merge</button>
+                <button onClick={() => editor.chain().focus().splitCell().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Split Cell">Split</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button onClick={() => editor.chain().focus().deleteTable().run()} className="px-2 py-1 text-xs rounded bg-red-50 hover:bg-red-100 border border-red-200 text-red-700" title="Delete Table">Delete</button>
+              </div>
+            )}
+
             <EditorContent
               editor={editor}
               className="tiptap h-full"
