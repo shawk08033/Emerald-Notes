@@ -24,18 +24,17 @@ export default function FolderSelector({ selectedFolderId, onFolderChange, class
     fetchFolders();
   }, []);
 
-  // Refresh folders when selectedFolderId changes
-  useEffect(() => {
-    fetchFolders();
-  }, [selectedFolderId]);
-
   const fetchFolders = async () => {
     try {
       const response = await fetch('/api/folders');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      setFolders(data);
+      setFolders(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching folders:', error);
+      setFolders([]); // Set empty array on error to prevent UI issues
     }
   };
 
