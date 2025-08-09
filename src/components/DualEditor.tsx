@@ -5,6 +5,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import Link from '@tiptap/extension-link';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
@@ -207,6 +208,36 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
 
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Link (toggle) */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('link')) {
+              editor.chain().focus().extendMarkRange('link').unsetLink().run();
+              return;
+            }
+            const prev = editor.getAttributes('link')?.href || '';
+            const input = window.prompt('Enter URL', prev || 'https://');
+            if (input === null) return;
+            const value = input.trim();
+            if (!value) return;
+            let href = value;
+            if (!/^(https?:\/\/|mailto:|tel:|\/|#)/i.test(href)) {
+              href = 'https://' + href;
+            }
+            editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+          })}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('link')
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Toggle Link"
+        >
+          Link
+        </button>
+      </div>
 
       {/* Headings */}
       <div className="flex items-center gap-1">
@@ -415,6 +446,15 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
         background: transparent;
         color: #f3f4f6;
       }
+
+      /* Link styles inside editor */
+      .tiptap a {
+        color: #059669;
+        text-decoration: underline;
+      }
+      .tiptap a:hover {
+        color: #047857;
+      }
       
       /* Syntax highlighting colors */
       .token.keyword { color: #f87171 !important; }
@@ -475,6 +515,12 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       StarterKit.configure({
         codeBlock: false,
       }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        protocols: ['http', 'https', 'mailto', 'tel'],
+      }),
       CodeBlockWithToolbar.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
       Table.configure({ resizable: true }),
@@ -497,6 +543,35 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       editor.commands.setContent(value);
     }
   }, [value, editor]);
+
+  // Allow opening links only with Ctrl/Cmd-click in edit mode
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom as HTMLElement;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const anchor = (target.closest && target.closest('a')) as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        try {
+          window.open(href, '_blank', 'noopener');
+        } catch {
+          // ignore
+        }
+      } else {
+        // Prevent accidental navigation on plain click while editing
+        e.preventDefault();
+      }
+    };
+    dom.addEventListener('click', handleClick);
+    return () => {
+      dom.removeEventListener('click', handleClick);
+    };
+  }, [editor]);
 
   // Removed Markdown mode: component now operates in Visual (HTML) mode only
 
