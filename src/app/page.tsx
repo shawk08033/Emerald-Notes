@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import DualEditor from '@/components/DualEditor';
 import TagInput from '@/components/TagInput';
 import FolderSelector from '@/components/FolderSelector';
+import Sidebar from '@/components/Sidebar';
 import { createLowlight } from 'lowlight';
 import 'highlight.js/styles/github-dark.css';
 
@@ -26,6 +27,7 @@ export default function Home() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedFolderId, setSelectedFolderId] = useState<number | 'no-folder' | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [currentNoteFolderId, setCurrentNoteFolderId] = useState<number | null>(null);
   const [folders, setFolders] = useState<Array<{id: number, name: string, parent_id: number | null, icon?: string | null}>>([]);
   const [folderMeta, setFolderMeta] = useState<Record<number, { count: number; latest?: string }>>({});
@@ -167,14 +169,15 @@ export default function Home() {
     return doc.body.innerHTML;
   };
 
-  // Fetch notes when folder selection changes
+  // Fetch notes when folder or tag selection changes
   useEffect(() => {
-    // Only fetch when selectedFolderId changes (not on initial load)
-    if (selectedFolderId !== undefined) {
+    // Only fetch when selectedFolderId or selectedTag changes (not on initial load)
+    if (selectedFolderId !== undefined || selectedTag !== undefined) {
       console.log('useEffect triggered - selectedFolderId changed to:', selectedFolderId);
+      console.log('useEffect triggered - selectedTag changed to:', selectedTag);
       fetchNotes();
     }
-  }, [selectedFolderId]);
+  }, [selectedFolderId, selectedTag]);
 
   // Fetch folders
   const fetchFolders = async () => {
@@ -205,7 +208,9 @@ export default function Home() {
     try {
       setIsFetching(true);
       let url = '/api/notes';
-      if (selectedFolderId !== null) {
+      if (selectedTag !== null) {
+        url = `/api/notes?tag=${encodeURIComponent(selectedTag)}`;
+      } else if (selectedFolderId !== null) {
         // If selectedFolderId is a number, filter by that folder
         // If selectedFolderId is 'no-folder', filter for notes with no folder
         if (selectedFolderId === 'no-folder') {
@@ -216,6 +221,7 @@ export default function Home() {
       }
       console.log('Fetching notes with URL:', url);
       console.log('Selected folder ID:', selectedFolderId);
+      console.log('Selected tag:', selectedTag);
       const response = await fetch(url);
       console.log('Response status:', response.status);
       console.log('Response ok:', response.ok);
@@ -379,238 +385,62 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
+      <Sidebar
+        selectedFolderId={selectedFolderId}
+        selectedTag={selectedTag}
+        onFolderSelect={setSelectedFolderId}
+        onTagSelect={setSelectedTag}
+        onCreateNote={createNewNote}
+      />
+
+      {/* Notes List */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-800">Emerald Notes</h1>
-          <button
-            onClick={createNewNote}
-            className="mt-3 w-full bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 transition-colors"
-          >
-            + New Note
-          </button>
-        </div>
-
-        {/* Folder tree removed to interleave folders and notes in a single list */}
-
-        {/* Notes List */}
         <div className="flex-1 overflow-y-auto">
           {notes.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
-              No notes yet. Create your first note!
+              {selectedTag ? `No notes with tag "${selectedTag}"` : 
+               selectedFolderId === 'no-folder' ? 'No notes without folder' :
+               selectedFolderId ? 'No notes in this folder' :
+               'No notes yet. Create your first note!'}
             </div>
           ) : (
             <div className="p-2">
-              {/* Folders header + add */}
-              <div className="flex items-center justify-between px-2 py-2 border-b border-gray-200 mb-2">
-                <h3 className="text-sm font-semibold text-gray-700">Folders</h3>
-                {isCreatingFolder ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          (async () => {
-                            if (!newFolderName.trim()) return;
-                            const res = await fetch('/api/folders', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ name: newFolderName.trim(), parent_id: null, icon: null }),
-                            });
-                            if (res.ok) {
-                              const created = await res.json();
-                              setFolders((prev) => [...prev, created]);
-                              setFolderMeta((prev) => ({ ...prev, [created.id]: { count: 0, latest: undefined } }));
-                              setIsCreatingFolder(false);
-                              setNewFolderName('');
-                            }
-                          })();
-                        } else if (e.key === 'Escape') {
-                          setIsCreatingFolder(false);
-                          setNewFolderName('');
-                        }
-                      }}
-                      placeholder="Folder name..."
-                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-emerald-500 text-gray-900 placeholder-gray-500"
-                      autoFocus
-                    />
-                    <button
-                      className="text-gray-500 hover:text-gray-700 text-sm"
-                      onClick={() => {
-                        setIsCreatingFolder(false);
-                        setNewFolderName('');
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setIsCreatingFolder(true)}
-                    className="text-emerald-600 hover:text-emerald-700 text-sm"
-                  >
-                    + New
-                  </button>
-                )}
-              </div>
-
-              {(() => {
-                // Group notes by folder_id (null for no-folder)
-                const grouped = new Map<number | null, typeof notes>();
-                for (const n of notes) {
-                  const key = n.folder_id === null ? null : n.folder_id;
-                  const arr = grouped.get(key) || [];
-                  arr.push(n);
-                  grouped.set(key, arr);
-                }
-
-                const renderNoteItem = (note: typeof notes[number]) => (
-                  <div
-                    key={note.id}
-                    className={`p-3 rounded-md cursor-pointer transition-colors ${
-                      selectedNote?.id === note.id
-                        ? 'bg-emerald-100 border-emerald-300 border'
-                        : 'hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      setSelectedNote(note);
-                      setIsEditing(false);
-                    }}
-                  >
-                    <h3 className="font-medium text-gray-900 truncate text-base">{note.title}</h3>
-                    <p className="text-sm text-gray-600 mt-1 truncate">
-                      {note.content
-                        ? note.content
-                            .replace(/<[^>]*>/g, '')
-                            .replace(/^#+\s+/gm, '')
-                            .replace(/\*\*(.*?)\*\*/g, '$1')
-                            .replace(/\*(.*?)\*/g, '$1')
-                            .replace(/`(.*?)`/g, '$1')
-                            .replace(/^- (.*$)/gm, '$1')
-                            .replace(/^(\d+)\. (.*$)/gm, '$2')
-                            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-                            .replace(/\n+/g, ' ')
-                            .replace(/\s+/g, ' ')
-                            .trim()
-                            .substring(0, 100) + (note.content.length > 100 ? '...' : '')
-                        : 'No content'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-2">
-                      {new Date(note.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                );
-
-                const blocks: ReactNode[] = [];
-
-                // 1) No-folder notes first (collapsible)
-                const noFolderNotes = grouped.get(null) || [];
-                blocks.push(
-                  <div key="group-no-folder" className="px-2 py-1">
-                    <div className="flex items-center justify-between group">
-                      <div className="flex items-center gap-2">
-                        <button
-                          aria-label="Toggle collapse"
-                          className="text-gray-500 hover:text-gray-700 text-xs"
-                          onClick={() => setCollapsedNoFolder((prev) => !prev)}
-                        >
-                          {collapsedNoFolder ? '▶' : '▼'}
-                        </button>
-                        <span className="text-xs uppercase tracking-wide text-gray-600">No folder</span>
-                        <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                          {noFolderNotes.length}
-                        </span>
-                      </div>
-                    </div>
-                    {!collapsedNoFolder && (
-                      <div>
-                        {noFolderNotes.length === 0 ? (
-                          <div className="px-3 py-2 text-xs italic text-gray-400">No notes</div>
-                        ) : (
-                          noFolderNotes.map((n) => <div key={`no-folder-note-${n.id}`}>{renderNoteItem(n)}</div>)
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-
-                // 2) Then each folder and its notes
-                folders.forEach((folder) => {
-                  const folderNotes = grouped.get(folder.id) || [];
-                  // Always render folder header, even if empty
-                  blocks.push(
-                    <div key={`group-${folder.id}`} className="px-2 py-1">
-                      <div className="flex items-center justify-between group">
-                        <div className="flex items-center gap-2">
-                          <button
-                            aria-label="Toggle collapse"
-                            className="text-gray-500 hover:text-gray-700 text-xs"
-                            onClick={() =>
-                              setCollapsedFolders((prev) => ({
-                                ...prev,
-                                [folder.id]: !prev[folder.id],
-                              }))
-                            }
-                          >
-                            {collapsedFolders[folder.id] ? '▶' : '▼'}
-                          </button>
-                          <button
-                            className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-600 hover:text-emerald-700"
-                            onClick={() => {
-                              setSelectedFolderSettingsId(folder.id);
-                              setEditFolderName(folder.name);
-                              setEditFolderIcon(folder.icon || '');
-                              setEmojiPickerOpenFor(null);
-                            }}
-                            title="Click to edit folder settings"
-                          >
-                            <span className="text-base">
-                              {folder.icon ? folder.icon : '📁'}
-                            </span>
-                            <span>{folder.name}</span>
-                            {folderMeta[folder.id]?.count !== undefined && (
-                              <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                {folderMeta[folder.id].count}
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-700 text-xs"
-                            onClick={() => {
-                              setSelectedFolderSettingsId(folder.id);
-                              setEditFolderName(folder.name);
-                              setEditFolderIcon(folder.icon || '');
-                              setEmojiPickerOpenFor(null);
-                            }}
-                            title="Folder settings"
-                          >
-                            ⚙
-                          </button>
-                        </div>
-                      </div>
-                      {/* Folder inline settings removed; settings render in main panel */}
-
-                      {/* Notes under folder (respect collapse) */}
-                      {!collapsedFolders[folder.id] && (
-                        <div>
-                          {folderNotes.length === 0 ? (
-                            <div key={`folder-${folder.id}-empty`} className="px-3 py-2 text-xs italic text-gray-400">
-                              No notes
-                            </div>
-                          ) : (
-                            folderNotes.map((n) => <div key={`note-${n.id}`}>{renderNoteItem(n)}</div>)
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-
-                return blocks;
-              })()}
+              {notes.map((note) => (
+                <div
+                  key={note.id}
+                  className={`p-3 rounded-md cursor-pointer transition-colors ${
+                    selectedNote?.id === note.id
+                      ? 'bg-emerald-100 border-emerald-300 border'
+                      : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => {
+                    setSelectedNote(note);
+                    setIsEditing(false);
+                  }}
+                >
+                  <h3 className="font-medium text-gray-900 truncate text-base">{note.title}</h3>
+                  <p className="text-sm text-gray-600 mt-1 truncate">
+                    {note.content
+                      ? note.content
+                          .replace(/<[^>]*>/g, '')
+                          .replace(/^#+\s+/gm, '')
+                          .replace(/\*\*(.*?)\*\*/g, '$1')
+                          .replace(/\*(.*?)\*/g, '$1')
+                          .replace(/`(.*?)`/g, '$1')
+                          .replace(/^- (.*$)/gm, '$1')
+                          .replace(/^(\d+)\. (.*$)/gm, '$2')
+                          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                          .replace(/\n+/g, ' ')
+                          .replace(/\s+/g, ' ')
+                          .trim()
+                          .substring(0, 100) + (note.content.length > 100 ? '...' : '')
+                      : 'No content'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {new Date(note.updated_at).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </div>
