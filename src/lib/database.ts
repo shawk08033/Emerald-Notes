@@ -158,7 +158,25 @@ export const tagOperations = {
     SELECT t.* FROM tags t
     JOIN note_tags nt ON t.id = nt.tag_id
     WHERE nt.note_id = ?
-  `)
+  `),
+
+  // Get notes by tag
+  getNotesByTag: db.prepare(`
+    SELECT DISTINCT n.* FROM notes n
+    JOIN note_tags nt ON n.id = nt.note_id
+    JOIN tags t ON nt.tag_id = t.id
+    WHERE t.name = ? AND n.is_archived = 0
+    ORDER BY n.updated_at DESC
+  `),
+
+  // Get notes by tag name (using the old tags field for backward compatibility)
+  getNotesByTagName: db.prepare(`
+    SELECT * FROM notes 
+    WHERE tags LIKE ? AND is_archived = 0
+    ORDER BY updated_at DESC
+  `),
+
+
 };
 
 // Folder operations

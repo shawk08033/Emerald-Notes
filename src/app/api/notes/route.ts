@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { noteOperations, folderOperations } from '@/lib/database';
+import { noteOperations, folderOperations, tagOperations } from '@/lib/database';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const folderId = searchParams.get('folder_id');
     const noFolder = searchParams.get('no_folder');
+    const tag = searchParams.get('tag');
     
     console.log('API - folderId:', folderId);
     console.log('API - noFolder:', noFolder);
+    console.log('API - tag:', tag);
     
     let notes;
-    if (folderId) {
+    if (tag) {
+      // Use the old tags field for backward compatibility
+      notes = tagOperations.getNotesByTagName.all(`%${tag}%`);
+      console.log('API - Filtering by tag:', tag);
+    } else if (folderId) {
       notes = folderOperations.getNotesInFolder.all(parseInt(folderId));
       console.log('API - Filtering by folder ID:', folderId);
     } else if (noFolder === 'true') {
