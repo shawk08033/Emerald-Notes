@@ -43,6 +43,46 @@ lowlight.register({ rust });
 lowlight.register({ sql: sqlLang });
 lowlight.register({ csharp });
 
+// Custom Text Color Extension
+const TextColor = TiptapReact.Mark.create({
+  name: 'textColor',
+  
+  addOptions() {
+    return {
+      HTMLAttributes: {},
+    };
+  },
+
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.color,
+        renderHTML: (attributes: { color?: string }) => {
+          if (!attributes.color) {
+            return {};
+          }
+          return {
+            style: `color: ${attributes.color}`,
+          };
+        },
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: 'span[style*="color"]',
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['span', HTMLAttributes, 0];
+  },
+});
+
 interface DualEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -209,6 +249,47 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
         </button>
       </div>
 
+      {/* Text Color */}
+      <div className="flex items-center gap-1">
+        <div className="relative">
+          <input
+            type="color"
+            className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
+            title="Text Color"
+            defaultValue="#000000"
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const color = e.target.value;
+              if (color && color !== '#000000') {
+                // Check if selection is in code block or link
+                const isInCodeBlock = editor.isActive('codeBlock');
+                const isInLink = editor.isActive('link');
+                const isInCode = editor.isActive('code');
+                
+                if (!isInCodeBlock && !isInLink && !isInCode) {
+                  handleButtonClick(() => {
+                    editor.chain().focus().setMark('textColor', { color }).run();
+                  });
+                }
+              }
+            }}
+          />
+          {editor.isActive('textColor') && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border border-white"></div>
+          )}
+        </div>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().unsetMark('textColor').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('textColor')
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Remove Text Color"
+        >
+          Clear
+        </button>
+      </div>
+
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
 
@@ -357,7 +438,7 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
           }`}
           title="Quote"
         >
-          "
+          &quot;
         </button>
         <button
           onClick={() => handleButtonClick(() => {
@@ -519,6 +600,8 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       .token.class-name { color: #a78bfa !important; }
       .token.variable { color: #f3f4f6 !important; }
 
+
+
       /* Table styles */
       .tiptap table {
         width: 100%;
@@ -607,6 +690,7 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       TableRow,
       TableHeader,
       TableCell,
+      TextColor,
     ],
     content: value,
     onUpdate: ({ editor }) => {

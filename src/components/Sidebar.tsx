@@ -38,7 +38,7 @@ export default function Sidebar({
   };
 
   return (
-    <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+    <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden flex-shrink-0">
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <h1 className="text-xl font-bold text-gray-800">Emerald Notes</h1>
@@ -75,7 +75,7 @@ export default function Sidebar({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {view === 'folders' ? (
           <FolderTree
             selectedFolderId={selectedFolderId}
