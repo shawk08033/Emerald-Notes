@@ -480,7 +480,7 @@ export default function Home() {
       />
 
       {/* Notes List */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
         {/* Notes List Header */}
         <div className="flex items-center justify-between p-3 border-b border-gray-200">
           <div className="flex items-center space-x-2">
@@ -572,7 +572,7 @@ export default function Home() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-y-auto">
         {selectedFolderSettingsId ? (
           <>
             {/* Folder Settings Header */}
@@ -597,7 +597,7 @@ export default function Home() {
             </div>
 
             {/* Folder Settings Content */}
-            <div className="flex-1 p-6 bg-white">
+            <div className="flex-1 p-6 bg-white overflow-y-auto">
               {(() => {
                 const folder = folders.find(f => f.id === selectedFolderSettingsId)!;
                 return (
@@ -752,7 +752,7 @@ export default function Home() {
             </div>
 
             {/* Note Content */}
-            <div className="flex-1 p-6 bg-white">
+            <div className="flex-1 p-6 bg-white overflow-y-auto">
               {isEditing ? (
                 <div className="space-y-4 h-full">
                   <input
