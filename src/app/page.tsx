@@ -21,6 +21,8 @@ interface Note {
   tags: string;
 }
 
+type SortMethod = 'title' | 'created_at' | 'updated_at';
+
 export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
@@ -37,8 +39,10 @@ export default function Home() {
   const [editFolderName, setEditFolderName] = useState('');
   const [editFolderIcon, setEditFolderIcon] = useState('');
   const [emojiPickerOpenFor, setEmojiPickerOpenFor] = useState<number | null>(null);
+  const [sortMethod, setSortMethod] = useState<SortMethod>('updated_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const EMOJI_OPTIONS = [
-    '📁','📄','📝','📚','💡','🧪','🧰','🔧','🗂️','🗃️','🗒️','📦','🕹️','🧠','🎯','🚀','🧩','📊','💻','⚙️'
+    '📁','📄','📝','📚','💡','🧪','🧰','🔧','🗂️','🗃️','🗒️','📦','🕹️','🧠','🎯','🚀','🧩','��','💻','⚙️'
   ];
 
   const computeFolderMeta = (notesList: Note[]) => {
@@ -98,6 +102,85 @@ export default function Home() {
 
   const formatTags = (tags: string[]): string => {
     return tags.join(', ');
+  };
+
+  const sortNotes = (notesToSort: Note[]): Note[] => {
+    return [...notesToSort].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortMethod) {
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        case 'updated_at':
+          comparison = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  };
+
+  const toggleSortDirection = () => {
+    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Check if we should highlight folders/tags based on selected note
+  const shouldHighlightFromSelectedNote = () => {
+    // Only highlight when no folder or tag is selected (showing all notes)
+    return selectedNote && selectedFolderId === null && selectedTag === null;
+  };
+
+  // Get the folder ID that should be highlighted
+  const getHighlightedFolderId = () => {
+    if (shouldHighlightFromSelectedNote() && selectedNote) {
+      return selectedNote.folder_id;
+    }
+    return null;
+  };
+
+  // Get the tags that should be highlighted
+  const getHighlightedTags = () => {
+    if (shouldHighlightFromSelectedNote() && selectedNote) {
+      return parseTags(selectedNote.tags);
+    }
+    return [];
+  };
+
+  const handleNoteDrop = async (noteId: number, folderId: number | null) => {
+    try {
+      const noteToUpdate = notes.find(n => n.id === noteId);
+      if (!noteToUpdate) return;
+
+      const updatedNote = {
+        ...noteToUpdate,
+        folder_id: folderId
+      };
+
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedNote),
+      });
+
+      if (response.ok) {
+        const updatedNoteData = await response.json();
+        setNotes(prev => prev.map(n => n.id === noteId ? updatedNoteData : n));
+        
+        // Update selected note if it's the one being moved
+        if (selectedNote?.id === noteId) {
+          setSelectedNote(updatedNoteData);
+          setCurrentNoteFolderId(updatedNoteData.folder_id);
+        }
+      }
+    } catch (error) {
+      console.error('Error moving note to folder:', error);
+    }
   };
 
   // Detect if note content is HTML (from TipTap) vs Markdown
@@ -391,10 +474,41 @@ export default function Home() {
         onFolderSelect={setSelectedFolderId}
         onTagSelect={setSelectedTag}
         onCreateNote={createNewNote}
+        onNoteDrop={handleNoteDrop}
+        highlightedFolderId={getHighlightedFolderId()}
+        highlightedTags={getHighlightedTags()}
       />
 
       {/* Notes List */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+        {/* Notes List Header */}
+        <div className="flex items-center justify-between p-3 border-b border-gray-200">
+          <div className="flex items-center space-x-2">
+            <h3 className="text-sm font-semibold text-gray-700">Notes</h3>
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              {notes.length}
+            </span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <select
+              value={sortMethod}
+              onChange={(e) => setSortMethod(e.target.value as SortMethod)}
+              className="text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-emerald-500 text-gray-700"
+            >
+              <option value="title">Title</option>
+              <option value="created_at">Created</option>
+              <option value="updated_at">Updated</option>
+            </select>
+            <button
+              onClick={toggleSortDirection}
+              className="text-red-500 hover:text-red-700 text-xs p-1"
+              title={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`}
+            >
+              {sortDirection === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           {notes.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
@@ -405,9 +519,10 @@ export default function Home() {
             </div>
           ) : (
             <div className="p-2">
-              {notes.map((note) => (
+              {sortNotes(notes).map((note) => (
                 <div
                   key={note.id}
+                  draggable
                   className={`p-3 rounded-md cursor-pointer transition-colors ${
                     selectedNote?.id === note.id
                       ? 'bg-emerald-100 border-emerald-300 border'
@@ -416,6 +531,16 @@ export default function Home() {
                   onClick={() => {
                     setSelectedNote(note);
                     setIsEditing(false);
+                  }}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', note.id.toString());
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={(e) => {
+                    e.currentTarget.classList.remove('opacity-50');
+                  }}
+                  onDrag={(e) => {
+                    e.currentTarget.classList.add('opacity-50');
                   }}
                 >
                   <h3 className="font-medium text-gray-900 truncate text-base">{note.title}</h3>

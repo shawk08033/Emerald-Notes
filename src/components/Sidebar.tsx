@@ -10,6 +10,9 @@ interface SidebarProps {
   onFolderSelect: (folderId: number | 'no-folder' | null) => void;
   onTagSelect: (tag: string | null) => void;
   onCreateNote: () => void;
+  onNoteDrop?: (noteId: number, folderId: number | null) => void;
+  highlightedFolderId?: number | null;
+  highlightedTags?: string[];
 }
 
 export default function Sidebar({ 
@@ -17,7 +20,10 @@ export default function Sidebar({
   selectedTag, 
   onFolderSelect, 
   onTagSelect,
-  onCreateNote
+  onCreateNote,
+  onNoteDrop,
+  highlightedFolderId,
+  highlightedTags
 }: SidebarProps) {
   const [view, setView] = useState<'folders' | 'tags'>('folders');
 
@@ -74,11 +80,14 @@ export default function Sidebar({
           <FolderTree
             selectedFolderId={selectedFolderId}
             onFolderSelect={handleFolderSelect}
+            onNoteDrop={onNoteDrop}
+            highlightedFolderId={highlightedFolderId}
           />
         ) : (
           <TagTree
             selectedTag={selectedTag}
             onTagSelect={handleTagSelect}
+            highlightedTags={highlightedTags}
           />
         )}
       </div>
