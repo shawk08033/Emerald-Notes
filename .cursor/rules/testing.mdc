@@ -1,0 +1,38 @@
+---
+description: React testing guidelines and best practices for modern web applications
+globs: **/*.tsx, **/*.jsx, components/**/*
+alwaysApply: false
+---
+
+# React Testing
+
+## Prerequisites
+- Before initiating the test please ensure the Playwright MCP tool is enabled
+- Ensure the React development server is running (typically on localhost:3000 or localhost:5173)
+
+## Environment Setup
+- Check if .env file exists and contains necessary test credentials
+- If .env is missing, ask the user to provide one before proceeding
+
+## Login
+- If faced with a login screen, grep the .env, and look for USER_EMAIL and USER_PASSWORD
+- Never try to edit .env files or try random credentials, please stop your tasks and ask me to address the login issue
+
+## API Testing
+- If API endpoints fail, check the backend service status first
+- Don't create random data, ask the user to verify endpoints or check for API documentation
+- Look for existing API test files or Postman collections in the project
+
+## Test Data
+- Use existing test data when available in the project
+- If creating test data is necessary, use realistic but non-sensitive information
+- Clean up any test data created during testing unless asked to preserve it
+
+## Error Handling
+- If tests fail due to network issues, verify the backend/API is running
+- If component rendering fails, check for missing dependencies or build errors
+
+## Verification
+- If screenshots from Playwright are needed to verify, please don't commit these to the repository
+- Delete screenshot files after verification unless specifically asked to keep them
+- If API endpoints fail, don't create random data, ask the user to verify or look for instructions within other rules
