@@ -1,0 +1,35 @@
+---
+description: React best practices and patterns for modern web applications
+globs: **/*.tsx, **/*.jsx, components/**/*
+alwaysApple: false
+---
+
+# React Best Practices
+
+## Component Structure
+- Use functional components over class components
+- Keep components small and focused
+- Extract reusable logic into custom hooks
+- Use composition over inheritance
+- Implement proper prop types with TypeScript
+- Split large components into smaller, focused ones
+
+## API Constants 
+- Put all API routes under src/constants/apiRoutes.ts
+- Define variable routes like: (clientId: number) -> '/clients/${clientId}'
+
+## State Management
+- Use useState for local component state
+- Implement useReducer for complex state logic
+- Use Context API for shared state
+- Keep state as close to where it's used as possible
+- Avoid prop drilling through proper state management
+- Use state management libraries only when necessary
+
+## Performance
+- Implement proper memoization (useMemo, useCallback)
+- Use React.memo for expensive components
+- Avoid unnecessary re-renders
+- Implement proper lazy loading
+- Use proper key props in lists
+- Profile and optimize render performance

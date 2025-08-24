@@ -12,6 +12,8 @@ import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
+import TextAlign from '@tiptap/extension-text-align';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import { createLowlight } from 'lowlight';
 import { TextSelection, Selection } from '@tiptap/pm/state';
 import xml from 'highlight.js/lib/languages/xml';
@@ -80,6 +82,154 @@ const TextColor = TiptapReact.Mark.create({
 
   renderHTML({ HTMLAttributes }) {
     return ['span', HTMLAttributes, 0];
+  },
+});
+
+// Custom Background Color Extension
+const BackgroundColor = TiptapReact.Mark.create({
+  name: 'backgroundColor',
+  
+  addOptions() {
+    return {
+      HTMLAttributes: {},
+    };
+  },
+
+  addAttributes() {
+    return {
+      backgroundColor: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.backgroundColor,
+        renderHTML: (attributes: { backgroundColor?: string }) => {
+          if (!attributes.backgroundColor) {
+            return {};
+          }
+          return {
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: 'span[style*="background-color"]',
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['span', HTMLAttributes, 0];
+  },
+});
+
+// Enhanced Table Cell Extension
+const EnhancedTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.backgroundColor,
+        renderHTML: (attributes: { backgroundColor?: string }) => {
+          if (!attributes.backgroundColor) {
+            return {};
+          }
+          return {
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+      padding: {
+        default: '0.5rem 0.75rem',
+        parseHTML: (element: HTMLElement) => element.style.padding,
+        renderHTML: (attributes: { padding?: string }) => {
+          return {
+            style: `padding: ${attributes.padding}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+// Enhanced Table Header Extension
+const EnhancedTableHeader = TableHeader.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: '#f9fafb',
+        parseHTML: (element: HTMLElement) => element.style.backgroundColor,
+        renderHTML: (attributes: { backgroundColor?: string }) => {
+          return {
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+      textColor: {
+        default: '#374151',
+        parseHTML: (element: HTMLElement) => element.style.color,
+        renderHTML: (attributes: { textColor?: string }) => {
+          return {
+            style: `color: ${attributes.textColor}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+// Enhanced Image Extension with positioning
+const EnhancedImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      align: {
+        default: 'center',
+        parseHTML: (element: HTMLElement) => element.style.textAlign || 'center',
+        renderHTML: (attributes: { align?: string }) => {
+          return {
+            style: `text-align: ${attributes.align || 'center'}`,
+          };
+        },
+      },
+      width: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.width,
+        renderHTML: (attributes: { width?: string }) => {
+          if (!attributes.width) return {};
+          return {
+            style: `width: ${attributes.width}`,
+          };
+        },
+      },
+      height: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.height,
+        renderHTML: (attributes: { height?: string }) => {
+          if (!attributes.height) return {};
+          return {
+            style: `height: ${attributes.height}`,
+          };
+        },
+      },
+      caption: {
+        default: null,
+        parseHTML: (element: HTMLElement) => {
+          const caption = element.nextElementSibling;
+          return caption?.tagName === 'FIGCAPTION' ? caption.textContent : null;
+        },
+        renderHTML: (attributes: { caption?: string }) => {
+          if (!attributes.caption) return {};
+          return {
+            'data-caption': attributes.caption,
+          };
+        },
+      },
+    };
   },
 });
 
@@ -332,6 +482,83 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
         </button>
       </div>
 
+      {/* Image Positioning */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('image')) {
+              editor.chain().focus().updateAttributes('image', { align: 'left' }).run();
+            }
+          })}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('image') && editor.getAttributes('image')?.align === 'left'
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Image Left"
+        >
+          Img←
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('image')) {
+              editor.chain().focus().updateAttributes('image', { align: 'center' }).run();
+            }
+          })}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('image') && editor.getAttributes('image')?.align === 'center'
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Image Center"
+        >
+          Img↔
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('image')) {
+              editor.chain().focus().updateAttributes('image', { align: 'right' }).run();
+            }
+          })}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('image') && editor.getAttributes('image')?.align === 'right'
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Image Right"
+        >
+          Img→
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('image')) {
+              const width = window.prompt('Image width (px, %, or auto):', '300px');
+              if (width) {
+                editor.chain().focus().updateAttributes('image', { width }).run();
+              }
+            }
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Set Image Width"
+        >
+          Width
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => {
+            if (editor.isActive('image')) {
+              const caption = window.prompt('Image caption:', '');
+              if (caption !== null) {
+                editor.chain().focus().updateAttributes('image', { caption }).run();
+              }
+            }
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Add Image Caption"
+        >
+          Caption
+        </button>
+      </div>
+
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
 
@@ -462,18 +689,184 @@ function Toolbar({ editor, onToolbarAction }: { editor: any; onToolbarAction: ()
       {/* Divider */}
       <div className="w-px h-6 bg-gray-300"></div>
 
-      {/* Tables */}
+      {/* Text Alignment */}
       <div className="flex items-center gap-1">
         <button
-          onClick={() =>
-            handleButtonClick(() =>
-              editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-            )
-          }
-          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
-          title="Insert Table"
+          onClick={() => handleButtonClick(() => editor.chain().focus().setTextAlign('left').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive({ textAlign: 'left' })
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Left"
         >
-          Table
+          ⬅
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().setTextAlign('center').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive({ textAlign: 'center' })
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Center"
+        >
+          ↔
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().setTextAlign('right').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive({ textAlign: 'right' })
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Align Right"
+        >
+          ➡
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().setTextAlign('justify').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive({ textAlign: 'justify' })
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Justify"
+        >
+          ⬌
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Horizontal Rule */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().setHorizontalRule().run())}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Horizontal Rule"
+        >
+          ─
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Background Color */}
+      <div className="flex items-center gap-1">
+        <div className="relative">
+          <input
+            type="color"
+            className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
+            title="Background Color"
+            defaultValue="#ffffff"
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const color = e.target.value;
+              if (color && color !== '#ffffff') {
+                const isInCodeBlock = editor.isActive('codeBlock');
+                const isInLink = editor.isActive('link');
+                const isInCode = editor.isActive('code');
+                
+                if (!isInCodeBlock && !isInLink && !isInCode) {
+                  handleButtonClick(() => {
+                    editor.chain().focus().setMark('backgroundColor', { backgroundColor: color }).run();
+                  });
+                }
+              }
+            }}
+          />
+          {editor.isActive('backgroundColor') && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border border-white"></div>
+          )}
+        </div>
+        <button
+          onClick={() => handleButtonClick(() => editor.chain().focus().unsetMark('backgroundColor').run())}
+          className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+            editor.isActive('backgroundColor')
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+          }`}
+          title="Remove Background Color"
+        >
+          Clear BG
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Enhanced Tables */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            const rows = window.prompt('Number of rows:', '3');
+            const cols = window.prompt('Number of columns:', '3');
+            const withHeader = window.confirm('Include header row?');
+            if (rows && cols) {
+              handleButtonClick(() =>
+                editor.chain().focus().insertTable({ 
+                  rows: parseInt(rows), 
+                  cols: parseInt(cols), 
+                  withHeaderRow: withHeader 
+                }).run()
+              );
+            }
+          }}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Insert Table with Size Selection"
+        >
+          Table+
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-6 bg-gray-300"></div>
+
+      {/* Indentation Controls */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleButtonClick(() => {
+            const selection = editor.state.selection;
+            const $from = selection.$from;
+            const $to = selection.$to;
+            const node = $from.node();
+            
+            // Add left margin to the current block
+            const currentStyle = node.attrs.style || '';
+            const currentMargin = currentStyle.match(/margin-left:\s*(\d+px)/)?.[1] || '0px';
+            const newMargin = parseInt(currentMargin) + 20;
+            
+            editor.chain().focus().updateAttributes(node.type.name, {
+              style: currentStyle.replace(/margin-left:\s*\d+px/, '') + `margin-left: ${newMargin}px;`
+            }).run();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Indent Block"
+        >
+          →
+        </button>
+        <button
+          onClick={() => handleButtonClick(() => {
+            const selection = editor.state.selection;
+            const $from = selection.$from;
+            const $to = selection.$to;
+            const node = $from.node();
+            
+            // Reduce left margin to the current block
+            const currentStyle = node.attrs.style || '';
+            const currentMargin = currentStyle.match(/margin-left:\s*(\d+px)/)?.[1] || '0px';
+            const newMargin = Math.max(0, parseInt(currentMargin) - 20);
+            
+            editor.chain().focus().updateAttributes(node.type.name, {
+              style: currentStyle.replace(/margin-left:\s*\d+px/, '') + (newMargin > 0 ? `margin-left: ${newMargin}px;` : '')
+            }).run();
+          })}
+          className="px-3 py-2 rounded-md text-sm font-semibold bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+          title="Outdent Block"
+        >
+          ←
         </button>
       </div>
 
@@ -602,24 +995,134 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
 
 
 
-      /* Table styles */
+      /* Enhanced Table styles */
       .tiptap table {
         width: 100%;
         border-collapse: collapse;
         margin: 1rem 0;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
       .tiptap th, .tiptap td {
         border: 1px solid #e5e7eb;
-        padding: 0.5rem 0.75rem;
+        padding: 0.75rem 1rem;
         text-align: left;
+        vertical-align: top;
       }
       .tiptap thead th {
         background: #f9fafb;
         font-weight: 600;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
       }
       .tiptap tbody tr:nth-child(odd) {
         background: #fafafa;
       }
+      .tiptap tbody tr:hover {
+        background: #f3f4f6;
+      }
+
+      /* Horizontal Rule styles */
+      .tiptap hr {
+        border: none;
+        border-top: 2px solid #e5e7eb;
+        margin: 1.5rem 0;
+        height: 1px;
+      }
+      .tiptap hr:hover {
+        border-top-color: #d1d5db;
+      }
+
+      /* Text alignment styles */
+      .tiptap .text-left {
+        text-align: left;
+      }
+      .tiptap .text-center {
+        text-align: center;
+      }
+      .tiptap .text-right {
+        text-align: right;
+      }
+      .tiptap .text-justify {
+        text-align: justify;
+      }
+
+      /* Image positioning and caption styles */
+      .tiptap img {
+        display: block;
+        margin: 1rem auto;
+        max-width: 100%;
+        height: auto;
+      }
+      
+      .tiptap img[style*="text-align: left"] {
+        margin-left: 0;
+        margin-right: auto;
+        float: left;
+        margin-right: 1rem;
+      }
+      
+      .tiptap img[style*="text-align: right"] {
+        margin-left: auto;
+        margin-right: 0;
+        float: right;
+        margin-left: 1rem;
+      }
+      
+      .tiptap img[style*="text-align: center"] {
+        margin-left: auto;
+        margin-right: auto;
+        float: none;
+      }
+      
+      .tiptap img[data-caption]::after {
+        content: attr(data-caption);
+        display: block;
+        text-align: center;
+        font-style: italic;
+        color: #6b7280;
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+      }
+
+      /* Enhanced content positioning styles */
+      .tiptap p, .tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6 {
+        margin: 0.75rem 0;
+        line-height: 1.6;
+      }
+      
+      .tiptap p:first-child, .tiptap h1:first-child, .tiptap h2:first-child, 
+      .tiptap h3:first-child, .tiptap h4:first-child, .tiptap h5:first-child, 
+      .tiptap h6:first-child {
+        margin-top: 0;
+      }
+      
+      .tiptap p:last-child, .tiptap h1:last-child, .tiptap h2:last-child, 
+      .tiptap h3:last-child, .tiptap h4:last-child, .tiptap h5:last-child, 
+      .tiptap h6:last-child {
+        margin-bottom: 0;
+      }
+      
+      /* Block spacing controls */
+      .tiptap .block-spacing-small {
+        margin: 0.5rem 0;
+      }
+      
+      .tiptap .block-spacing-medium {
+        margin: 1rem 0;
+      }
+      
+      .tiptap .block-spacing-large {
+        margin: 1.5rem 0;
+      }
+      
+      /* Indentation styles */
+      .tiptap .indent-1 { margin-left: 1rem; }
+      .tiptap .indent-2 { margin-left: 2rem; }
+      .tiptap .indent-3 { margin-left: 3rem; }
+      .tiptap .indent-4 { margin-left: 4rem; }
 
       /* Column resize UI (TipTap/ProseMirror tables) */
       .tiptap .column-resize-handle {
@@ -671,6 +1174,7 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
     extensions: [
       StarterKit.configure({
         codeBlock: false,
+        horizontalRule: false, // Disable to avoid conflict with our custom extension
       }),
       Link.configure({
         openOnClick: false,
@@ -678,7 +1182,7 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
         linkOnPaste: true,
         protocols: ['http', 'https', 'mailto', 'tel'],
       }),
-      Image.configure({
+      EnhancedImage.configure({
         HTMLAttributes: {
           class: 'rounded-md max-w-full h-auto',
         },
@@ -688,9 +1192,15 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
       Placeholder.configure({ placeholder }),
       Table.configure({ resizable: true }),
       TableRow,
-      TableHeader,
-      TableCell,
+      EnhancedTableHeader,
+      EnhancedTableCell,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+        alignments: ['left', 'center', 'right', 'justify'],
+      }),
+      HorizontalRule,
       TextColor,
+      BackgroundColor,
     ],
     content: value,
     onUpdate: ({ editor }) => {
@@ -1142,6 +1652,26 @@ export default function DualEditor({ value, onChange, placeholder = "Start writi
                 <button onClick={() => editor.chain().focus().toggleHeaderRow().run()} className={`px-2 py-1 text-xs rounded border ${editor.isActive('tableHeader') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-800'}`} title="Toggle Header Row">Header</button>
                 <button onClick={() => editor.chain().focus().mergeCells().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Merge Cells">Merge</button>
                 <button onClick={() => editor.chain().focus().splitCell().run()} className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" title="Split Cell">Split</button>
+                <div className="w-px h-5 bg-gray-200 mx-1" />
+                <button 
+                  onClick={() => {
+                    const color = window.prompt('Enter background color (hex, rgb, or name):', '#f0f0f0');
+                    if (color) {
+                      editor.chain().focus().updateAttributes('tableCell', { backgroundColor: color }).run();
+                    }
+                  }} 
+                  className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" 
+                  title="Set Cell Background Color"
+                >
+                  BG Color
+                </button>
+                <button 
+                  onClick={() => editor.chain().focus().updateAttributes('tableCell', { backgroundColor: null }).run()} 
+                  className="px-2 py-1 text-xs rounded bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800" 
+                  title="Clear Cell Background Color"
+                >
+                  Clear BG
+                </button>
                 <div className="w-px h-5 bg-gray-200 mx-1" />
                 <button onClick={() => editor.chain().focus().deleteTable().run()} className="px-2 py-1 text-xs rounded bg-red-50 hover:bg-red-100 border border-red-200 text-red-700" title="Delete Table">Delete</button>
               </div>
